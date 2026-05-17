@@ -33,6 +33,88 @@ std::vector<float> Model::dequant_tensor(const std::string& name)
 
     std::vector<float> out(n_elems);
 
+    if (name == "blk.0.attn_q.weight") {
+        const uint8_t* raw = static_cast<const uint8_t*>(t->data);
+        std::cerr << "blk.0.attn_q.weight type=" << static_cast<uint32_t>(t->type)
+                  << " n_elems=" << n_elems << " n_bytes=" << t->n_bytes << "\n";
+        std::cerr << "First 16 raw bytes: ";
+        for (int i = 0; i < 16; ++i) {
+            std::cerr << std::hex << static_cast<int>(raw[i]) << " ";
+        }
+        std::cerr << std::dec << "\n";
+
+        uint16_t d_raw;
+        std::memcpy(&d_raw, raw + 108, 2);
+        std::cerr << "d_raw (fp16) = 0x" << std::hex << d_raw << std::dec << "\n";
+
+        std::cerr << "expected blocks=" << (n_elems / 256)
+                  << " actual bytes/110=" << (t->n_bytes / 110) << "\n";
+
+        const uint8_t* scales = raw + 96;
+        uint16_t d_val;
+        std::memcpy(&d_val, raw + 108, 2);
+        auto fp16_to_float = [](uint16_t h) -> float {
+            const uint32_t sign = static_cast<uint32_t>(h & 0x8000u) << 16;
+            uint32_t exp = (h >> 10) & 0x1Fu;
+            uint32_t mant = h & 0x3FFu;
+            uint32_t bits;
+            if (exp == 0) {
+                if (mant == 0) {
+                    bits = sign;
+                } else {
+                    exp = 127 - 14;
+                    while ((mant & 0x400u) == 0) {
+                        mant <<= 1;
+                        --exp;
+                    }
+                    mant &= 0x3FFu;
+                    bits = sign | (exp << 23) | (mant << 13);
+                }
+            } else if (exp == 31) {
+                bits = sign | 0x7F800000u | (mant << 13);
+            } else {
+                bits = sign | ((exp + 112) << 23) | (mant << 13);
+            }
+            float f;
+            std::memcpy(&f, &bits, sizeof(f));
+            return f;
+        };
+        const float d_f = fp16_to_float(d_val);
+
+        int8_t sc[16];
+        sc[0] = static_cast<int8_t>((scales[0] & 0xF) | ((scales[8] & 0x03) << 4));
+        sc[1] = static_cast<int8_t>((scales[0] >> 4) | ((scales[8] & 0x0C) << 2));
+        sc[2] = static_cast<int8_t>((scales[1] & 0xF) | ((scales[9] & 0x03) << 4));
+        sc[3] = static_cast<int8_t>((scales[1] >> 4) | ((scales[9] & 0x0C) << 2));
+        sc[4] = static_cast<int8_t>((scales[2] & 0xF) | ((scales[10] & 0x03) << 4));
+        sc[5] = static_cast<int8_t>((scales[2] >> 4) | ((scales[10] & 0x0C) << 2));
+        sc[6] = static_cast<int8_t>((scales[3] & 0xF) | ((scales[11] & 0x03) << 4));
+        sc[7] = static_cast<int8_t>((scales[3] >> 4) | ((scales[11] & 0x0C) << 2));
+        sc[8] = static_cast<int8_t>((scales[4] & 0xF) | ((scales[8] & 0x30) >> 0));
+        sc[9] = static_cast<int8_t>((scales[4] >> 4) | ((scales[9] & 0x30) >> 0));
+        sc[10] = static_cast<int8_t>((scales[5] & 0xF) | ((scales[10] & 0x30) >> 0));
+        sc[11] = static_cast<int8_t>((scales[5] >> 4) | ((scales[11] & 0x30) >> 0));
+        sc[12] = static_cast<int8_t>((scales[6] & 0xF) | ((scales[8] & 0xC0) >> 2));
+        sc[13] = static_cast<int8_t>((scales[6] >> 4) | ((scales[9] & 0xC0) >> 2));
+        sc[14] = static_cast<int8_t>((scales[7] & 0xF) | ((scales[10] & 0xC0) >> 2));
+        sc[15] = static_cast<int8_t>((scales[7] >> 4) | ((scales[11] & 0xC0) >> 2));
+
+        std::cerr << "d=" << d_f << " scales: ";
+        for (int i = 0; i < 16; ++i) {
+            const float scale_val = d_f * static_cast<float>(sc[i] - 32);
+            std::cerr << "[" << i << "]sc=" << static_cast<int>(sc[i]) << " s-32="
+                      << static_cast<int>(sc[i] - 32) << " scaled=" << scale_val
+                      << (std::isnan(scale_val) ? " NAN!" : "") << " | ";
+        }
+        std::cerr << "\n";
+
+        std::cerr << "raw scales[0..11]: ";
+        for (int i = 0; i < 12; ++i) {
+            std::cerr << std::hex << static_cast<int>(scales[i]) << " ";
+        }
+        std::cerr << std::dec << "\n";
+    }
+
     switch (t->type) {
     case GGMLType::F32:
         std::memcpy(out.data(), t->data, n_elems * sizeof(float));
@@ -57,6 +139,40 @@ std::vector<float> Model::dequant_tensor(const std::string& name)
     default:
         throw std::runtime_error("Model: unsupported quant type for tensor: " + name);
     }
+
+    if (name == "blk.0.attn_q.weight") {
+        int nan_count = 0;
+        int first_nan_idx = -1;
+        for (size_t i = 0; i < out.size(); ++i) {
+            if (std::isnan(out[i])) {
+                ++nan_count;
+                if (first_nan_idx < 0) {
+                    first_nan_idx = static_cast<int>(i);
+                }
+            }
+        }
+        std::cerr << "After dequant: nan_count=" << nan_count << " first_nan_at=" << first_nan_idx
+                  << "\n";
+        if (first_nan_idx >= 0) {
+            const int block_idx = first_nan_idx / 256;
+            const int elem_idx = first_nan_idx % 256;
+            std::cerr << "First NaN: block=" << block_idx << " elem=" << elem_idx << "\n";
+
+            const uint8_t* raw = static_cast<const uint8_t*>(t->data);
+            const uint8_t* blk = raw + block_idx * 110;
+            std::cerr << "Raw block " << block_idx << " bytes[96..109] (scales+d): ";
+            for (int i = 96; i < 110; ++i) {
+                std::cerr << std::hex << static_cast<int>(blk[i]) << " ";
+            }
+            std::cerr << std::dec << "\n";
+
+            uint16_t d_blk;
+            std::memcpy(&d_blk, blk + 108, 2);
+            std::cerr << "Block " << block_idx << " d_raw=0x" << std::hex << d_blk << std::dec
+                      << "\n";
+        }
+    }
+
     return out;
 }
 

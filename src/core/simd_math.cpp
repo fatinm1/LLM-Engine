@@ -272,58 +272,52 @@ void dequant_q8_0(const void* src, float* out, size_t n_blocks)
 
 void dequant_q3_k_m(const void* src, float* out, size_t n_blocks)
 {
-    struct Q3KBlock {
-        uint8_t hmask[32];
-        uint8_t qs[64];
-        uint8_t scales[12];
-        uint16_t d;
-    };
-
-    static_assert(sizeof(Q3KBlock) == 110, "Q3KBlock must be 110 bytes");
+    // Matches ggml/src/ggml-quants.c dequantize_row_q3_K (QK_K = 256).
+    const uint32_t kmask1 = 0x03030303;
+    const uint32_t kmask2 = 0x0f0f0f0f;
 
     const auto* blocks = static_cast<const uint8_t*>(src);
-    size_t out_idx = 0;
+    float* y = out;
+
     for (size_t b = 0; b < n_blocks; ++b) {
-        const auto* blk = reinterpret_cast<const Q3KBlock*>(blocks + b * sizeof(Q3KBlock));
-        const float d_all = fp16_to_fp32(blk->d);
+        const uint8_t* block = blocks + b * 110;
 
-        const uint8_t* hmask = blk->hmask;
-        const uint8_t* qs = blk->qs;
-        const uint8_t* scales = blk->scales;
+        const float d_all = fp16_to_fp32(*reinterpret_cast<const uint16_t*>(block + 108));
 
-        int8_t sc[16];
-        sc[0] = static_cast<int8_t>((scales[0] & 0xF) | ((scales[8] & 0x3) << 4));
-        sc[1] = static_cast<int8_t>((scales[0] >> 4) | ((scales[8] & 0xC) << 2));
-        sc[2] = static_cast<int8_t>((scales[1] & 0xF) | ((scales[9] & 0x3) << 4));
-        sc[3] = static_cast<int8_t>((scales[1] >> 4) | ((scales[9] & 0xC) << 2));
-        sc[4] = static_cast<int8_t>((scales[2] & 0xF) | ((scales[10] & 0x3) << 4));
-        sc[5] = static_cast<int8_t>((scales[2] >> 4) | ((scales[10] & 0xC) << 2));
-        sc[6] = static_cast<int8_t>((scales[3] & 0xF) | ((scales[11] & 0x3) << 4));
-        sc[7] = static_cast<int8_t>((scales[3] >> 4) | ((scales[11] & 0xC) << 2));
-        sc[8] = static_cast<int8_t>((scales[4] & 0xF) | ((scales[8] >> 6) << 4));
-        sc[9] = static_cast<int8_t>((scales[4] >> 4) | ((scales[9] >> 6) << 4));
-        sc[10] = static_cast<int8_t>((scales[5] & 0xF) | ((scales[10] >> 6) << 4));
-        sc[11] = static_cast<int8_t>((scales[5] >> 4) | ((scales[11] >> 6) << 4));
-        sc[12] = static_cast<int8_t>((scales[6] & 0xF) | ((scales[8] >> 4) & 0x30));
-        sc[13] = static_cast<int8_t>((scales[6] >> 4) | ((scales[9] >> 4) & 0x30));
-        sc[14] = static_cast<int8_t>((scales[7] & 0xF) | ((scales[10] >> 4) & 0x30));
-        sc[15] = static_cast<int8_t>((scales[7] >> 4) | ((scales[11] >> 4) & 0x30));
+        const uint8_t* q = block + 32;
+        const uint8_t* hm = block + 0;
+        uint8_t m = 1;
 
-        for (int i = 0; i < 256; ++i) {
-            const int sub_block = i / 16;
-            const int qi = i / 4;
-            const int qshift = (i % 4) * 2;
-            const int low2 = (qs[qi] >> qshift) & 0x3;
+        uint32_t aux[4];
+        const int8_t* scales = reinterpret_cast<const int8_t*>(aux);
+        std::memcpy(aux, block + 96, 12);
+        const uint32_t tmp = aux[2];
+        aux[2] = ((aux[0] >> 4) & kmask2) | (((tmp >> 4) & kmask1) << 4);
+        aux[3] = ((aux[1] >> 4) & kmask2) | (((tmp >> 6) & kmask1) << 4);
+        aux[0] = (aux[0] & kmask2) | (((tmp >> 0) & kmask1) << 4);
+        aux[1] = (aux[1] & kmask2) | (((tmp >> 2) & kmask1) << 4);
 
-            const int hi_byte = i / 8;
-            const int hi_bit = i % 8;
-            const int hbit = (hmask[hi_byte] >> hi_bit) & 0x1;
+        int is = 0;
+        float dl;
+        for (int n = 0; n < 256; n += 128) {
+            int shift = 0;
+            for (int j = 0; j < 4; ++j) {
+                dl = d_all * static_cast<float>(scales[is++] - 32);
+                for (int l = 0; l < 16; ++l) {
+                    *y++ = dl * static_cast<float>(static_cast<int8_t>(((q[l + 0] >> shift) & 3) -
+                                                                        ((hm[l + 0] & m) ? 0 : 4)));
+                }
 
-            int quant = low2 | (hbit << 2);
-            quant -= 4;
+                dl = d_all * static_cast<float>(scales[is++] - 32);
+                for (int l = 0; l < 16; ++l) {
+                    *y++ = dl * static_cast<float>(static_cast<int8_t>(((q[l + 16] >> shift) & 3) -
+                                                                        ((hm[l + 16] & m) ? 0 : 4)));
+                }
 
-            const float scale = d_all * static_cast<float>(sc[sub_block] - 32);
-            out[out_idx++] = scale * static_cast<float>(quant);
+                shift += 2;
+                m <<= 1;
+            }
+            q += 32;
         }
     }
 }
