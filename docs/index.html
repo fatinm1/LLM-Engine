@@ -52,3 +52,263 @@
     };
   </script>
 </head>
+<body class="font-sans bg-llm-bg text-stone-900 antialiased min-h-screen">
+
+  <!-- Desktop nav -->
+  <header class="fixed top-6 left-1/2 -translate-x-1/2 z-[100] group/header hidden lg:block w-full max-w-5xl px-6">
+    <nav class="relative">
+      <div class="h-20 bg-stone-900/95 backdrop-blur-xl border border-white/10 rounded-full px-4 sm:px-6 flex items-center justify-between shadow-2xl shadow-stone-900/20">
+        <!-- Left -->
+        <div class="flex items-center gap-4 sm:gap-6 min-w-0">
+          <a href="#" class="flex items-center gap-3 shrink-0" aria-label="LLM Engine home">
+            <span class="w-10 h-10 rounded-xl bg-violet-700 flex items-center justify-center text-white font-mono text-sm font-bold shadow-lg shadow-violet-900/40">&gt;_</span>
+            <span class="text-white font-semibold text-sm hidden sm:block">LLM Engine</span>
+          </a>
+          <span class="w-px h-8 bg-white/10 shrink-0" aria-hidden="true"></span>
+          <div class="flex items-center gap-1">
+            <a href="#features" class="px-3 py-2 rounded-full text-sm font-medium text-stone-300 hover:text-white hover:bg-white/5 transition">Features</a>
+            <a href="#architecture" class="px-3 py-2 rounded-full text-sm font-medium text-stone-300 hover:text-white hover:bg-white/5 transition">Architecture</a>
+            <a href="#models" class="px-3 py-2 rounded-full text-sm font-medium text-stone-300 hover:text-white hover:bg-white/5 transition">Models</a>
+            <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" class="px-3 py-2 rounded-full text-sm font-medium text-stone-300 hover:text-white hover:bg-white/5 transition">GitHub</a>
+          </div>
+        </div>
+
+        <!-- Right -->
+        <div class="flex items-center gap-3 sm:gap-4 shrink-0">
+          <button type="button" class="w-10 h-10 rounded-full flex items-center justify-center text-stone-400 hover:text-white hover:bg-white/5 transition" aria-label="Search">
+            <i class="ph ph-magnifying-glass text-xl"></i>
+          </button>
+          <span class="w-px h-8 bg-white/10" aria-hidden="true"></span>
+          <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-violet-700 hover:bg-violet-600 text-white text-sm font-semibold transition shadow-lg shadow-violet-900/30">
+            View on GitHub
+            <i class="ph ph-arrow-right text-base"></i>
+          </a>
+        </div>
+      </div>
+
+      <!-- Mega-menu drawer -->
+      <div class="absolute top-full left-0 right-0 pt-4 opacity-0 invisible translate-y-2 group-hover/header:opacity-100 group-hover/header:visible group-hover/header:translate-y-0 transition-all duration-300 pointer-events-none group-hover/header:pointer-events-auto">
+        <div class="bg-white rounded-3xl border border-stone-200 shadow-2xl shadow-stone-900/10 p-8 grid grid-cols-4 gap-8">
+          <!-- Build -->
+          <div>
+            <p class="text-xs font-bold tracking-widest text-violet-700 uppercase mb-4">Build</p>
+            <ul class="space-y-3">
+              <li>
+                <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" class="group flex items-start gap-3 text-stone-600 hover:text-stone-900 transition">
+                  <i class="ph ph-terminal-window text-lg text-violet-600 mt-0.5"></i>
+                  <span>
+                    <span class="block text-sm font-semibold">Clone &amp; Build</span>
+                    <span class="block text-xs text-stone-400 mt-0.5">CMake + C++20 toolchain</span>
+                  </span>
+                </a>
+              </li>
+              <li>
+                <a href="https://github.com/fatinm1/LLM-Engine#running-tests" target="_blank" rel="noopener noreferrer" class="group flex items-start gap-3 text-stone-600 hover:text-stone-900 transition">
+                  <i class="ph ph-check-circle text-lg text-violet-600 mt-0.5"></i>
+                  <span>
+                    <span class="block text-sm font-semibold">Running Tests</span>
+                    <span class="block text-xs text-stone-400 mt-0.5">21 GoogleTest cases</span>
+                  </span>
+                </a>
+              </li>
+              <li>
+                <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" class="group flex items-start gap-3 text-stone-600 hover:text-stone-900 transition">
+                  <i class="ph ph-chat-circle text-lg text-violet-600 mt-0.5"></i>
+                  <span>
+                    <span class="block text-sm font-semibold">CLI Smoke Test</span>
+                    <span class="block text-xs text-stone-400 mt-0.5">scripts/cli_test.cpp</span>
+                  </span>
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Documentation -->
+          <div>
+            <p class="text-xs font-bold tracking-widest text-violet-700 uppercase mb-4">Documentation</p>
+            <ul class="space-y-3">
+              <li>
+                <a href="https://github.com/fatinm1/LLM-Engine/blob/main/README.md" target="_blank" rel="noopener noreferrer" class="group flex items-start gap-3 text-stone-600 hover:text-stone-900 transition">
+                  <i class="ph ph-book-open text-lg text-violet-600 mt-0.5"></i>
+                  <span>
+                    <span class="block text-sm font-semibold">README</span>
+                    <span class="block text-xs text-stone-400 mt-0.5">Build &amp; usage guide</span>
+                  </span>
+                </a>
+              </li>
+              <li>
+                <a href="https://github.com/fatinm1/LLM-Engine#build-instructions" target="_blank" rel="noopener noreferrer" class="group flex items-start gap-3 text-stone-600 hover:text-stone-900 transition">
+                  <i class="ph ph-hammer text-lg text-violet-600 mt-0.5"></i>
+                  <span>
+                    <span class="block text-sm font-semibold">Build Instructions</span>
+                    <span class="block text-xs text-stone-400 mt-0.5">llm_core &amp; llm_desktop</span>
+                  </span>
+                </a>
+              </li>
+              <li>
+                <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" class="group flex items-start gap-3 text-stone-600 hover:text-stone-900 transition">
+                  <i class="ph ph-download-simple text-lg text-violet-600 mt-0.5"></i>
+                  <span>
+                    <span class="block text-sm font-semibold">Getting a Model</span>
+                    <span class="block text-xs text-stone-400 mt-0.5">Drop GGUF in models/</span>
+                  </span>
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Tech Stack -->
+          <div>
+            <p class="text-xs font-bold tracking-widest text-violet-700 uppercase mb-4">Tech Stack</p>
+            <ul class="space-y-3">
+              <li class="flex items-center gap-3 text-sm text-stone-600">
+                <i class="ph ph-code text-lg text-stone-400"></i>
+                <span>C++20 / CMake</span>
+              </li>
+              <li class="flex items-center gap-3 text-sm text-stone-600">
+                <i class="ph ph-layout text-lg text-stone-400"></i>
+                <span>Dear ImGui + GLFW</span>
+              </li>
+              <li class="flex items-center gap-3 text-sm text-stone-600">
+                <i class="ph ph-flask text-lg text-stone-400"></i>
+                <span>GoogleTest</span>
+              </li>
+              <li class="flex items-center gap-3 text-sm text-stone-600">
+                <i class="ph ph-package text-lg text-stone-400"></i>
+                <span>GGUF Format</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Featured -->
+          <div class="bg-stone-900 rounded-2xl p-6 text-white flex flex-col justify-between min-h-[200px]">
+            <div>
+              <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-700/30 border border-violet-500/30 text-violet-200 text-xs font-semibold mb-4">
+                <i class="ph ph-cpu"></i>
+                Apple Silicon
+              </span>
+              <h3 class="font-serif text-2xl leading-tight mb-2">Runs entirely on your CPU</h3>
+              <p class="text-stone-400 text-sm leading-relaxed">No GPU, no cloud API, no telemetry. Your weights stay memory-mapped on disk until inference touches them.</p>
+            </div>
+            <div class="mt-6 pt-6 border-t border-white/10">
+              <p class="text-4xl font-bold text-violet-300">2.4</p>
+              <p class="text-sm text-stone-400 mt-1">tok/s on Apple M-series · Llama 3.2 1B Q4_K_M</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <!-- Mobile nav bar -->
+  <header class="lg:hidden fixed top-6 left-6 right-6 z-[100] h-16 bg-stone-950/90 backdrop-blur-xl border border-white/10 rounded-full px-4 flex items-center justify-between shadow-xl">
+    <a href="#" class="flex items-center gap-2 shrink-0" aria-label="LLM Engine home">
+      <span class="w-9 h-9 rounded-lg bg-violet-700 flex items-center justify-center text-white font-mono text-xs font-bold">&gt;_</span>
+    </a>
+    <div class="flex items-center gap-1">
+      <a href="#features" class="w-10 h-10 rounded-full flex items-center justify-center text-stone-400 hover:text-white hover:bg-white/5 transition" aria-label="Features">
+        <i class="ph ph-sparkle text-lg"></i>
+      </a>
+      <a href="#architecture" class="w-10 h-10 rounded-full flex items-center justify-center text-stone-400 hover:text-white hover:bg-white/5 transition" aria-label="Architecture">
+        <i class="ph ph-tree-structure text-lg"></i>
+      </a>
+      <a href="#models" class="w-10 h-10 rounded-full flex items-center justify-center text-stone-400 hover:text-white hover:bg-white/5 transition" aria-label="Models">
+        <i class="ph ph-cube text-lg"></i>
+      </a>
+      <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" class="w-10 h-10 rounded-full flex items-center justify-center text-stone-400 hover:text-white hover:bg-white/5 transition" aria-label="GitHub">
+        <i class="ph ph-github-logo text-lg"></i>
+      </a>
+    </div>
+    <button type="button" id="mobile-menu-open" class="w-10 h-10 rounded-full bg-violet-700 hover:bg-violet-600 text-white flex items-center justify-center transition shrink-0" aria-label="Open menu">
+      <i class="ph ph-list text-xl"></i>
+    </button>
+  </header>
+
+  <!-- Mobile overlay -->
+  <div id="mobile-menu-overlay" class="lg:hidden fixed inset-0 z-[200] hidden" aria-hidden="true">
+    <div class="absolute inset-0 bg-stone-950/60 backdrop-blur-sm" data-mobile-close></div>
+    <div class="absolute inset-y-0 right-0 w-full max-w-sm bg-white shadow-2xl flex flex-col">
+      <div class="flex items-center justify-between p-6 border-b border-stone-100">
+        <div class="flex items-center gap-3">
+          <span class="w-10 h-10 rounded-xl bg-violet-700 flex items-center justify-center text-white font-mono text-sm font-bold">&gt;_</span>
+          <span class="font-semibold text-stone-900">LLM Engine</span>
+        </div>
+        <button type="button" id="mobile-menu-close" class="w-10 h-10 rounded-full bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-600 transition" aria-label="Close menu">
+          <i class="ph ph-x text-xl"></i>
+        </button>
+      </div>
+      <nav class="flex-1 overflow-y-auto p-6">
+        <ul class="space-y-2">
+          <li>
+            <a href="#features" data-mobile-link class="flex items-center gap-3 px-4 py-3 rounded-2xl text-stone-700 hover:bg-stone-50 font-medium transition">
+              <i class="ph ph-sparkle text-xl text-violet-600"></i>
+              Features
+            </a>
+          </li>
+          <li>
+            <a href="#architecture" data-mobile-link class="flex items-center gap-3 px-4 py-3 rounded-2xl text-stone-700 hover:bg-stone-50 font-medium transition">
+              <i class="ph ph-tree-structure text-xl text-violet-600"></i>
+              Architecture
+            </a>
+          </li>
+          <li>
+            <a href="#models" data-mobile-link class="flex items-center gap-3 px-4 py-3 rounded-2xl text-stone-700 hover:bg-stone-50 font-medium transition">
+              <i class="ph ph-cube text-xl text-violet-600"></i>
+              Models
+            </a>
+          </li>
+          <li>
+            <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" data-mobile-link class="flex items-center gap-3 px-4 py-3 rounded-2xl text-stone-700 hover:bg-stone-50 font-medium transition">
+              <i class="ph ph-github-logo text-xl text-violet-600"></i>
+              GitHub
+            </a>
+          </li>
+        </ul>
+      </nav>
+      <div class="p-6 border-t border-stone-100 space-y-3">
+        <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" data-mobile-link class="flex items-center justify-center gap-2 w-full py-3.5 rounded-full bg-stone-900 hover:bg-stone-800 text-white text-sm font-semibold transition">
+          Clone on GitHub
+          <i class="ph ph-arrow-right"></i>
+        </a>
+        <a href="https://github.com/fatinm1/LLM-Engine/blob/main/README.md" target="_blank" rel="noopener noreferrer" data-mobile-link class="flex items-center justify-center gap-2 w-full py-3.5 rounded-full bg-white border border-stone-200 hover:border-stone-300 text-stone-900 text-sm font-semibold transition">
+          View README
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Spacer for fixed nav visual check -->
+  <main class="pt-32 px-6 max-w-3xl mx-auto">
+    <p class="text-stone-500 text-sm text-center">Navbar preview — hero section next.</p>
+  </main>
+
+  <script>
+    (function () {
+      const overlay = document.getElementById('mobile-menu-overlay');
+      const openBtn = document.getElementById('mobile-menu-open');
+      const closeBtn = document.getElementById('mobile-menu-close');
+
+      function openMenu() {
+        overlay.classList.remove('hidden');
+        overlay.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+      }
+
+      function closeMenu() {
+        overlay.classList.add('hidden');
+        overlay.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+      }
+
+      openBtn.addEventListener('click', openMenu);
+      closeBtn.addEventListener('click', closeMenu);
+      overlay.querySelectorAll('[data-mobile-close]').forEach(function (el) {
+        el.addEventListener('click', closeMenu);
+      });
+      overlay.querySelectorAll('[data-mobile-link]').forEach(function (el) {
+        el.addEventListener('click', closeMenu);
+      });
+    })();
+  </script>
+</body>
+</html>
