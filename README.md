@@ -6,13 +6,28 @@ A C++ desktop application that runs local LLM inference entirely on CPU — no i
 
 ---
 
-## Demo
+## Screenshots
 
-![LLM Engine screenshot — coming soon](https://drive.google.com/file/d/1rJoCu2sIAHseXlmPR8z5ZNhTUEJUGHuY/view?usp=sharing)
+### Landing Page
+![LLM Engine landing page](docs/screenshots/hero.png)
 
-*Screenshot coming soon.*
+### Desktop Chat UI
+![LLM Engine desktop chat window](docs/screenshots/desktop-chat.png)
 
-LLM Engine presents a native desktop chat experience built with **Dear ImGui**. A fixed **left sidebar** shows the loaded model’s architecture (layers, heads, embedding dimension, vocabulary size) and live **parameter sliders** for temperature, top-k, top-p, and repeat penalty. A **tokens-per-second** counter and context-usage indicator update during generation. The **main panel** is a scrollable message list where assistant replies **stream in token by token**, with a blinking cursor on the active message until generation completes. A text input and Send/Stop controls sit below the transcript; generation runs on a background thread so the window stays responsive.
+### Architecture
+![Transformer forward pass architecture](docs/screenshots/architecture.png)
+
+### Supported Models
+![Supported models section](docs/screenshots/models.png)
+
+### Quantization Formats
+![Quantization formats — Q3_K_M, Q4_K_S, F32](docs/screenshots/quantization.png)
+
+### Zero-Copy Model Loading
+![Zero-copy mmap model loading](docs/screenshots/zero-copy.png)
+
+### Open Source CTA
+![Open source — run it on your machine](docs/screenshots/open-source.png)
 
 ---
 
