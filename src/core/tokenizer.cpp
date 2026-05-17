@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <iostream>
 #include <sstream>
 #include <stdexcept>
 
@@ -106,6 +105,28 @@ uint32_t metadata_token_id(const GGUFFile& gguf, const std::string& key, uint32_
     return def;
 }
 
+constexpr char kGgPrefix[] = "\xc4\xa0";
+
+std::vector<std::string> split_on_spaces(const std::string& text)
+{
+    std::vector<std::string> words;
+    size_t i = 0;
+    while (i < text.size()) {
+        while (i < text.size() && text[i] == ' ') {
+            ++i;
+        }
+        if (i >= text.size()) {
+            break;
+        }
+        const size_t start = i;
+        while (i < text.size() && text[i] != ' ') {
+            ++i;
+        }
+        words.push_back(text.substr(start, i - start));
+    }
+    return words;
+}
+
 }  // namespace
 
 std::string Tokenizer::normalize_text(const std::string& text)
@@ -159,40 +180,6 @@ Tokenizer::Tokenizer(const GGUFFile& gguf)
             }
         }
     }
-
-    const auto it20 = token_to_id_.find(" ");
-    if (it20 != token_to_id_.end()) {
-        std::cerr << "space token: " << it20->second << "\n";
-    } else {
-        std::cerr << "bare space not in vocab\n";
-    }
-
-    auto check = [&](const std::string& s) {
-        const auto it = token_to_id_.find(s);
-        std::cerr << (it != token_to_id_.end()
-                          ? "FOUND '" + s + "' -> " + std::to_string(it->second)
-                          : "NOT FOUND '" + s + "'")
-                  << "\n";
-    };
-    check(" The");
-    check(" capital");
-    check(" of");
-    check(" France");
-    check(" is");
-
-    std::cerr << "byte_tokens_[0x20] = " << byte_tokens_[0x20] << "\n";
-
-    for (int i = 215; i < 225; ++i) {
-        if (i < static_cast<int>(vocab_.size())) {
-            const std::string& t = vocab_[static_cast<size_t>(i)];
-            std::cerr << "vocab[" << i << "] = '";
-            for (unsigned char c : t) {
-                std::cerr << "\\x" << std::hex << static_cast<int>(c);
-            }
-            std::cerr << "'\n";
-        }
-    }
-    std::cerr << std::dec;
 }
 
 std::vector<std::string> Tokenizer::utf8_chars(const std::string& text)
@@ -228,7 +215,12 @@ std::string Tokenizer::decode_token(TokenID id) const
     if (id < 0 || static_cast<size_t>(id) >= vocab_.size()) {
         return "";
     }
-    return vocab_[static_cast<size_t>(id)];
+    std::string text = vocab_[static_cast<size_t>(id)];
+    if (text.size() >= 2 && static_cast<unsigned char>(text[0]) == 0xc4 &&
+        static_cast<unsigned char>(text[1]) == 0xa0) {
+        text = " " + text.substr(2);
+    }
+    return text;
 }
 
 std::vector<TokenID> Tokenizer::encode(const std::string& text, bool add_bos) const
@@ -241,56 +233,74 @@ std::vector<TokenID> Tokenizer::encode(const std::string& text, bool add_bos) co
         return result;
     }
 
-    std::vector<std::string> symbols;
-    for (const std::string& ch : utf8_chars(text)) {
-        const auto it = token_to_id_.find(ch);
-        if (it != token_to_id_.end()) {
-            symbols.push_back(ch);
-        } else {
-            for (unsigned char b : ch) {
-                const TokenID bt = byte_tokens_[b];
-                symbols.push_back(vocab_[static_cast<size_t>(bt)]);
+    auto bpe_encode_piece = [&](const std::string& piece) -> std::vector<TokenID> {
+        std::vector<std::string> symbols;
+        for (const std::string& ch : utf8_chars(piece)) {
+            const auto it = token_to_id_.find(ch);
+            if (it != token_to_id_.end()) {
+                symbols.push_back(ch);
+            } else {
+                for (unsigned char b : ch) {
+                    const TokenID bt = byte_tokens_[b];
+                    symbols.push_back(vocab_[static_cast<size_t>(bt)]);
+                }
             }
         }
-    }
 
-    auto pair_key = [](const std::string& a, const std::string& b) { return a + "\x1f" + b; };
+        auto pair_key = [](const std::string& a, const std::string& b) { return a + "\x1f" + b; };
 
-    bool merged = true;
-    while (merged && symbols.size() > 1) {
-        merged = false;
-        float best_score = -1.0f;
-        size_t best_idx = 0;
-        std::string best_merged;
-        for (size_t i = 0; i + 1 < symbols.size(); ++i) {
-            const std::string candidate = symbols[i] + symbols[i + 1];
-            if (token_to_id_.find(candidate) == token_to_id_.end()) {
-                continue;
+        bool merged = true;
+        while (merged && symbols.size() > 1) {
+            merged = false;
+            float best_score = -1.0f;
+            size_t best_idx = 0;
+            std::string best_merged;
+            for (size_t i = 0; i + 1 < symbols.size(); ++i) {
+                const std::string candidate = symbols[i] + symbols[i + 1];
+                if (token_to_id_.find(candidate) == token_to_id_.end()) {
+                    continue;
+                }
+                const auto score_it = merge_scores_.find(pair_key(symbols[i], symbols[i + 1]));
+                if (score_it == merge_scores_.end()) {
+                    continue;
+                }
+                const float score = score_it->second;
+                if (score > best_score) {
+                    best_score = score;
+                    best_idx = i;
+                    best_merged = candidate;
+                    merged = true;
+                }
             }
-            const auto score_it = merge_scores_.find(pair_key(symbols[i], symbols[i + 1]));
-            if (score_it == merge_scores_.end()) {
-                continue;
-            }
-            const float score = score_it->second;
-            if (score > best_score) {
-                best_score = score;
-                best_idx = i;
-                best_merged = candidate;
-                merged = true;
+            if (merged) {
+                symbols[best_idx] = best_merged;
+                symbols.erase(symbols.begin() + static_cast<std::ptrdiff_t>(best_idx + 1));
             }
         }
-        if (merged) {
-            symbols[best_idx] = best_merged;
-            symbols.erase(symbols.begin() + static_cast<std::ptrdiff_t>(best_idx + 1));
-        }
-    }
 
-    for (const std::string& sym : symbols) {
-        const auto it = token_to_id_.find(sym);
-        if (it == token_to_id_.end()) {
-            throw std::runtime_error("Tokenizer: unknown symbol after BPE: " + sym);
+        std::vector<TokenID> ids;
+        ids.reserve(symbols.size());
+        for (const std::string& sym : symbols) {
+            const auto it = token_to_id_.find(sym);
+            if (it == token_to_id_.end()) {
+                throw std::runtime_error("Tokenizer: unknown symbol after BPE: " + sym);
+            }
+            ids.push_back(it->second);
         }
-        result.push_back(it->second);
+        return ids;
+    };
+
+    const std::vector<std::string> words = split_on_spaces(text);
+    for (size_t wi = 0; wi < words.size(); ++wi) {
+        const std::string piece =
+            (wi == 0) ? words[wi] : std::string(kGgPrefix) + words[wi];
+        const auto whole = token_to_id_.find(piece);
+        if (whole != token_to_id_.end()) {
+            result.push_back(whole->second);
+            continue;
+        }
+        const std::vector<TokenID> piece_ids = bpe_encode_piece(piece);
+        result.insert(result.end(), piece_ids.begin(), piece_ids.end());
     }
     return result;
 }
