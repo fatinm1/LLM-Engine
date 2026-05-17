@@ -285,20 +285,45 @@ void dequant_q3_k_m(const void* src, float* out, size_t n_blocks)
     size_t out_idx = 0;
     for (size_t b = 0; b < n_blocks; ++b) {
         const auto* blk = reinterpret_cast<const Q3KBlock*>(blocks + b * sizeof(Q3KBlock));
-        const float d = fp16_to_fp32(blk->d);
+        const float d_all = fp16_to_fp32(blk->d);
+
+        const uint8_t* hmask = blk->hmask;
+        const uint8_t* qs = blk->qs;
+        const uint8_t* scales = blk->scales;
+
+        int8_t sc[16];
+        sc[0] = static_cast<int8_t>((scales[0] & 0xF) | ((scales[8] & 0x3) << 4));
+        sc[1] = static_cast<int8_t>((scales[0] >> 4) | ((scales[8] & 0xC) << 2));
+        sc[2] = static_cast<int8_t>((scales[1] & 0xF) | ((scales[9] & 0x3) << 4));
+        sc[3] = static_cast<int8_t>((scales[1] >> 4) | ((scales[9] & 0xC) << 2));
+        sc[4] = static_cast<int8_t>((scales[2] & 0xF) | ((scales[10] & 0x3) << 4));
+        sc[5] = static_cast<int8_t>((scales[2] >> 4) | ((scales[10] & 0xC) << 2));
+        sc[6] = static_cast<int8_t>((scales[3] & 0xF) | ((scales[11] & 0x3) << 4));
+        sc[7] = static_cast<int8_t>((scales[3] >> 4) | ((scales[11] & 0xC) << 2));
+        sc[8] = static_cast<int8_t>((scales[4] & 0xF) | ((scales[8] >> 6) << 4));
+        sc[9] = static_cast<int8_t>((scales[4] >> 4) | ((scales[9] >> 6) << 4));
+        sc[10] = static_cast<int8_t>((scales[5] & 0xF) | ((scales[10] >> 6) << 4));
+        sc[11] = static_cast<int8_t>((scales[5] >> 4) | ((scales[11] >> 6) << 4));
+        sc[12] = static_cast<int8_t>((scales[6] & 0xF) | ((scales[8] >> 4) & 0x30));
+        sc[13] = static_cast<int8_t>((scales[6] >> 4) | ((scales[9] >> 4) & 0x30));
+        sc[14] = static_cast<int8_t>((scales[7] & 0xF) | ((scales[10] >> 4) & 0x30));
+        sc[15] = static_cast<int8_t>((scales[7] >> 4) | ((scales[11] >> 4) & 0x30));
 
         for (int i = 0; i < 256; ++i) {
-            const int low2 = (blk->qs[i / 4] >> (2 * (i % 4))) & 0x3;
-            const int hbit = (blk->hmask[i / 8] >> (i % 8)) & 0x1;
+            const int sub_block = i / 16;
+            const int qi = i / 4;
+            const int qshift = (i % 4) * 2;
+            const int low2 = (qs[qi] >> qshift) & 0x3;
+
+            const int hi_byte = i / 8;
+            const int hi_bit = i % 8;
+            const int hbit = (hmask[hi_byte] >> hi_bit) & 0x1;
+
             int quant = low2 | (hbit << 2);
             quant -= 4;
 
-            const int s = i / 16;
-            const int sc6 = ((blk->scales[s / 4 + (s < 8 ? 0 : 4)] >> (2 * (s % 4))) & 0x3) |
-                            (((blk->scales[s / 4 + (s < 8 ? 8 : 4)] >> (2 * (s % 4))) & 0x3) << 4);
-            const float scale_s = static_cast<float>(sc6 & 0x3F) - 32.0f;
-
-            out[out_idx++] = d * scale_s * static_cast<float>(quant);
+            const float scale = d_all * static_cast<float>(sc[sub_block] - 32);
+            out[out_idx++] = scale * static_cast<float>(quant);
         }
     }
 }
