@@ -8,7 +8,7 @@ A C++ desktop application that runs local LLM inference entirely on CPU — no i
 
 ## Demo
 
-![LLM Engine screenshot — coming soon](https://via.placeholder.com/800x500?text=LLM+Engine+Screenshot+Coming+Soon)
+![LLM Engine screenshot — coming soon](https://drive.google.com/file/d/1rJoCu2sIAHseXlmPR8z5ZNhTUEJUGHuY/view?usp=sharing)
 
 *Screenshot coming soon.*
 
