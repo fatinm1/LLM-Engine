@@ -600,35 +600,490 @@ tensor.<span class="text-violet-400">data</span> = base
     </div>
   </section>
 
-  <script>
-    AOS.init({ duration: 800, once: true, offset: 80 });
+  <!-- Architecture -->
+  <section id="architecture" class="py-24 px-6 relative overflow-hidden">
+    <div class="absolute inset-0 bg-white/20 backdrop-blur-sm" aria-hidden="true"></div>
+    <div class="absolute top-20 right-20 w-80 h-80 bg-emerald-200/30 rounded-full blur-[80px] pointer-events-none" aria-hidden="true"></div>
+    <div class="absolute bottom-20 left-20 w-80 h-80 bg-violet-200/30 rounded-full blur-[80px] pointer-events-none" aria-hidden="true"></div>
 
-    (function () {
+    <div class="max-w-7xl mx-auto rounded-3xl p-4 md:p-0 relative z-10" data-aos="fade-up">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
+        <!-- Left text -->
+        <div class="lg:col-span-4 order-2 lg:order-1">
+          <span class="text-xs font-bold tracking-widest text-violet-700 uppercase mb-2 block">ARCHITECTURE</span>
+          <h2 class="font-serif text-4xl md:text-5xl text-stone-900 leading-tight mb-6">
+            Transformer forward pass,<br>from scratch.
+          </h2>
+          <p class="text-stone-600 leading-relaxed mb-8">
+            Each token generation step runs through a full Llama transformer — embedding lookup, 16 layers of GQA attention and SwiGLU FFN, RMSNorm, and output projection. No framework, no abstraction layer.
+          </p>
+          <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-stone-900 font-bold border-b-2 border-stone-900 hover:text-violet-700 hover:border-violet-700 transition pb-1 w-fit">
+            See the source code
+            <i class="ph ph-arrow-right text-base"></i>
+          </a>
+        </div>
+
+        <!-- Right bento -->
+        <div class="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-4 order-1 lg:order-2">
+          <!-- KV Cache -->
+          <div class="glass-card rounded-3xl p-6 hover:shadow-lg transition duration-300 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-violet-500 to-blue-500" aria-hidden="true"></div>
+            <div class="flex items-start justify-between gap-2 mb-1">
+              <h3 class="font-bold text-lg text-stone-900">KV Cache</h3>
+              <span class="text-xs bg-stone-100 px-2 py-1 rounded text-stone-500 shrink-0">O(n) generation</span>
+            </div>
+            <p class="text-sm text-stone-600 mt-3 leading-relaxed">
+              Past K and V tensors are stored per layer. Each new token attends to cached keys instead of recomputing the full sequence.
+            </p>
+            <div class="mt-4 space-y-2 font-mono text-xs">
+              <div class="flex items-center gap-2 text-stone-600">
+                <span class="w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0"></span>
+                <span>[t=0] K₀ V₀ <span class="text-stone-400">← cached</span></span>
+              </div>
+              <div class="flex items-center gap-2 text-stone-600">
+                <span class="w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0"></span>
+                <span>[t=1] K₁ V₁ <span class="text-stone-400">← cached</span></span>
+              </div>
+              <div class="flex items-center gap-2 text-stone-600">
+                <span class="w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0"></span>
+                <span>[t=2] K₂ V₂ <span class="text-stone-400">← cached</span></span>
+              </div>
+              <div class="flex items-center gap-2 bg-violet-50/50 rounded px-2 py-1 text-violet-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-violet-600 shrink-0"></span>
+                <span>[t=n] Kₙ Vₙ <span class="text-violet-500">← attend here</span></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- GQA Attention -->
+          <div class="glass-card rounded-3xl p-6 hover:shadow-lg transition duration-300">
+            <div class="flex items-start justify-between gap-2 mb-1">
+              <h3 class="font-bold text-lg text-stone-900">Grouped Query Attention</h3>
+              <span class="text-xs bg-stone-100 px-2 py-1 rounded text-stone-500 shrink-0">32 heads / 8 KV heads</span>
+            </div>
+            <p class="text-sm text-stone-600 mt-3 leading-relaxed">
+              Each KV head is shared by 4 query heads — reducing cache size 4× vs standard multi-head attention.
+            </p>
+            <pre class="mt-4 bg-stone-900 rounded-lg p-3 font-mono text-xs text-stone-200 overflow-x-auto"><code><span class="text-stone-500">// GQA head mapping</span>
+kv_h = query_head / <span class="text-amber-400">4</span>;
+<span class="text-stone-500">// 32 Q heads → 8 KV heads</span>
+<span class="text-stone-500">// 4× smaller KV cache</span></code></pre>
+          </div>
+
+          <!-- SwiGLU + RoPE -->
+          <div class="glass-card rounded-3xl p-6 col-span-1 sm:col-span-2 hover:shadow-lg transition duration-300">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <p class="text-xs font-bold text-violet-700 uppercase tracking-widest mb-3">SwiGLU FFN</p>
+                <pre class="bg-stone-900 rounded-lg p-3 font-mono text-xs text-stone-200 leading-relaxed overflow-x-auto"><code>gate = w_gate @ x_norm
+up   = w_up   @ x_norm
+out  = w_down @ (<span class="text-blue-400">silu</span>(gate) * up)
+<span class="text-stone-500">// ff_dim = 8,192</span></code></pre>
+              </div>
+              <div>
+                <p class="text-xs font-bold text-emerald-700 uppercase tracking-widest mb-3">RoPE Positional Encoding</p>
+                <pre class="bg-stone-900 rounded-lg p-3 font-mono text-xs text-stone-200 leading-relaxed overflow-x-auto"><code>theta[i] = pos / (<span class="text-amber-400">500000</span> ^ (2i/<span class="text-amber-400">64</span>))
+<span class="text-stone-500">// rope_theta = 500,000</span>
+<span class="text-stone-500">// Llama 3 specific value</span>
+<span class="text-stone-500">// Applied to Q and K</span></code></pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tests card -->
+          <div class="glass-featured-dark rounded-3xl p-6 col-span-1 sm:col-span-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+            <div class="flex items-center gap-4">
+              <div class="w-14 h-14 rounded-full border-4 border-violet-500 flex items-center justify-center shrink-0">
+                <span class="text-white font-bold text-lg">21</span>
+              </div>
+              <div>
+                <p class="font-bold text-white">unit tests passing</p>
+                <p class="text-xs text-stone-400 mt-0.5">simd_math · kv_cache · sampler · tokenizer</p>
+              </div>
+            </div>
+            <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 bg-white text-stone-900 px-4 py-2 rounded-full text-xs font-bold hover:bg-violet-100 transition shrink-0">
+              View on GitHub
+              <i class="ph ph-arrow-right"></i>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quantization -->
+  <section id="quantization" class="py-24 px-6 relative overflow-hidden">
+    <div class="absolute top-0 right-1/4 w-96 h-96 bg-blue-200/30 rounded-full blur-[80px] pointer-events-none" aria-hidden="true"></div>
+    <div class="absolute bottom-0 left-1/4 w-96 h-96 bg-violet-200/30 rounded-full blur-[80px] pointer-events-none" aria-hidden="true"></div>
+
+    <div class="max-w-5xl mx-auto text-center mb-16 relative z-10">
+      <span class="text-xs font-bold tracking-widest text-violet-700 uppercase mb-2 block" data-aos="fade-up">QUANTIZATION</span>
+      <h2 class="font-serif text-4xl md:text-5xl text-stone-900 mb-6 leading-tight" data-aos="fade-up" data-aos-delay="100">
+        Mixed precision,<br>handled automatically.
+      </h2>
+      <div class="h-px w-full bg-stone-200/60 mt-8" aria-hidden="true"></div>
+    </div>
+
+    <div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
+      <!-- Q3_K_M -->
+      <div class="group bg-white/30 p-1 rounded-3xl border border-white/50 hover:border-violet-300/50 hover:shadow-xl hover:-translate-y-2 transition duration-500 backdrop-blur-sm" data-aos="fade-up" data-aos-delay="0">
+        <div class="glass-card rounded-[20px] p-8 h-full flex flex-col">
+          <div class="w-12 h-12 bg-white/60 rounded-xl shadow-sm flex items-center justify-center text-violet-700 mb-6 text-2xl group-hover:scale-110 transition">
+            <i class="ph-fill ph-file-zip"></i>
+          </div>
+          <h3 class="font-bold text-xl text-stone-900 mb-2">Q3_K_M</h3>
+          <p class="text-sm text-stone-500 mb-8 leading-relaxed">
+            3-bit weights with K-means quantization. Used for attention weights (wq, wk, wv, wo) in Llama 3.2. 110 bytes per 256-element block.
+          </p>
+          <div class="bg-white/60 rounded-xl border border-white/50 p-3 mt-auto font-mono text-[10px]">
+            <p class="text-[10px] text-stone-400 mb-2">Block layout (110 bytes)</p>
+            <div class="flex items-center gap-0 w-full overflow-hidden rounded-sm">
+              <span class="px-2 py-1 text-[10px] font-mono border-r border-white flex-[32] bg-violet-100 text-violet-800 shrink-0">hmask·32</span>
+              <span class="px-2 py-1 text-[10px] font-mono border-r border-white flex-[64] bg-blue-100 text-blue-800 shrink-0">qs·64</span>
+              <span class="px-2 py-1 text-[10px] font-mono border-r border-white flex-[12] bg-stone-100 text-stone-600 shrink-0">scales·12</span>
+              <span class="px-2 py-1 text-[10px] font-mono flex-[2] bg-amber-100 text-amber-700 shrink-0">d·2</span>
+            </div>
+            <p class="text-[10px] text-stone-400 text-center mt-1">← 110 bytes total →</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Q4_K_S -->
+      <div class="group bg-white/30 p-1 rounded-3xl border border-white/50 hover:border-violet-300/50 hover:shadow-xl hover:-translate-y-2 transition duration-500 backdrop-blur-sm" data-aos="fade-up" data-aos-delay="100">
+        <div class="glass-card rounded-[20px] p-8 h-full flex flex-col">
+          <div class="w-12 h-12 bg-white/60 rounded-xl shadow-sm flex items-center justify-center text-blue-600 mb-6 text-2xl group-hover:scale-110 transition">
+            <i class="ph-fill ph-stack"></i>
+          </div>
+          <h3 class="font-bold text-xl text-stone-900 mb-2">Q4_K_S</h3>
+          <p class="text-sm text-stone-500 mb-8 leading-relaxed">
+            4-bit symmetric quantization. Used for FFN weights (ffn_gate, ffn_up, ffn_down) in Llama 3.2. 144 bytes per 256-element block.
+          </p>
+          <div class="bg-white/60 rounded-xl border border-white/50 p-3 mt-auto font-mono text-[10px]">
+            <p class="text-[10px] text-stone-400 mb-2">Block layout (144 bytes)</p>
+            <div class="flex items-center gap-0 w-full overflow-hidden rounded-sm">
+              <span class="px-2 py-1 text-[10px] font-mono border-r border-white flex-[12] bg-stone-100 text-stone-600 shrink-0">scales·12</span>
+              <span class="px-2 py-1 text-[10px] font-mono border-r border-white flex-[2] bg-amber-100 text-amber-700 shrink-0">d·2</span>
+              <span class="px-2 py-1 text-[10px] font-mono border-r border-white flex-[2] bg-amber-100 text-amber-800 shrink-0">dmin·2</span>
+              <span class="px-2 py-1 text-[10px] font-mono flex-[128] bg-blue-100 text-blue-800 shrink-0">qs·128</span>
+            </div>
+            <p class="text-[10px] text-stone-400 text-center mt-1">← 144 bytes total →</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- F32 + Q8_0 -->
+      <div class="group bg-white/30 p-1 rounded-3xl border border-white/50 hover:border-violet-300/50 hover:shadow-xl hover:-translate-y-2 transition duration-500 backdrop-blur-sm" data-aos="fade-up" data-aos-delay="200">
+        <div class="glass-card rounded-[20px] p-8 h-full flex flex-col">
+          <div class="w-12 h-12 bg-white/60 rounded-xl shadow-sm flex items-center justify-center text-emerald-600 mb-6 text-2xl group-hover:scale-110 transition">
+            <i class="ph-fill ph-shield-check"></i>
+          </div>
+          <h3 class="font-bold text-xl text-stone-900 mb-2">Full precision norms</h3>
+          <p class="text-sm text-stone-500 mb-8 leading-relaxed">
+            RMSNorm weights and embedding lookups stay in F32 for numerical stability. Q8_0 provides an 8-bit fallback at 34 bytes per 32-element block.
+          </p>
+          <div class="bg-white/60 rounded-xl border border-white/50 p-3 mt-auto space-y-2">
+            <div class="flex items-center justify-between text-[11px] gap-2">
+              <span class="text-stone-600 font-mono truncate">output_norm.weight</span>
+              <span class="px-2 py-0.5 rounded font-mono font-bold bg-emerald-100 text-emerald-800 shrink-0">F32</span>
+            </div>
+            <div class="flex items-center justify-between text-[11px] gap-2">
+              <span class="text-stone-600 font-mono truncate">token_embd.weight</span>
+              <span class="px-2 py-0.5 rounded font-mono font-bold bg-blue-100 text-blue-800 shrink-0">Q4_K_S</span>
+            </div>
+            <div class="flex items-center justify-between text-[11px] gap-2">
+              <span class="text-stone-600 font-mono truncate">attn_norm.weight</span>
+              <span class="px-2 py-0.5 rounded font-mono font-bold bg-emerald-100 text-emerald-800 shrink-0">F32</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Models -->
+  <section id="models" class="py-24 px-6 relative overflow-hidden">
+    <div class="absolute inset-0 bg-white/30 backdrop-blur-sm pointer-events-none" aria-hidden="true"></div>
+    <div class="absolute top-10 left-1/3 w-96 h-96 bg-violet-200/25 rounded-full blur-[80px] pointer-events-none" aria-hidden="true"></div>
+    <div class="absolute bottom-10 right-1/3 w-96 h-96 bg-emerald-200/25 rounded-full blur-[80px] pointer-events-none" aria-hidden="true"></div>
+
+    <div class="max-w-7xl mx-auto relative z-10">
+      <div class="text-center mb-16" data-aos="fade-up">
+        <span class="text-xs font-bold tracking-widest text-violet-700 uppercase mb-2 block">SUPPORTED MODELS</span>
+        <h2 class="font-serif text-4xl md:text-5xl text-stone-900 mb-6 leading-tight">
+          Works with the models<br>you already use.
+        </h2>
+        <p class="text-stone-500 text-lg max-w-xl mx-auto leading-relaxed">
+          Download any compatible GGUF from Hugging Face and drop it in the models/ folder.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto items-start">
+        <!-- Llama 3.2 1B -->
+        <div class="glass-card rounded-3xl p-8 border border-white/50 relative group hover:border-violet-200/50 transition duration-300 flex flex-col" data-aos="fade-up" data-aos-delay="0">
+          <div>
+            <h3 class="font-bold text-xl text-stone-900">Llama 3.2 1B</h3>
+            <p class="text-sm text-stone-500 mt-1">Instruct · Q4_K_M</p>
+          </div>
+          <div class="mb-6 mt-4 space-y-2 text-sm">
+            <div class="flex justify-between gap-4">
+              <span class="text-stone-400">Size</span>
+              <span class="text-stone-700 font-medium">808 MB</span>
+            </div>
+            <div class="flex justify-between gap-4 items-center">
+              <span class="text-stone-400">Speed</span>
+              <span class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-mono text-xs font-bold">~2.4 tok/s</span>
+            </div>
+            <div class="flex justify-between gap-4">
+              <span class="text-stone-400">RAM</span>
+              <span class="text-stone-700 font-medium">~1.2 GB</span>
+            </div>
+          </div>
+          <a href="https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF" target="_blank" rel="noopener noreferrer" class="w-full py-3 rounded-xl glass-card font-bold text-stone-600 text-center hover:bg-violet-50/50 transition mb-8 block">
+            Download →
+          </a>
+          <ul class="space-y-4 mt-auto">
+            <li class="flex items-center gap-2 text-sm text-stone-600">
+              <i class="ph ph-check text-violet-700 shrink-0"></i>
+              Tested and validated
+            </li>
+            <li class="flex items-center gap-2 text-sm text-stone-600">
+              <i class="ph ph-check text-violet-700 shrink-0"></i>
+              Fastest inference
+            </li>
+            <li class="flex items-center gap-2 text-sm text-stone-600">
+              <i class="ph ph-check text-violet-700 shrink-0"></i>
+              Best for development
+            </li>
+          </ul>
+        </div>
+
+        <!-- Llama 3.2 3B (featured) -->
+        <div class="glass-featured-dark rounded-3xl p-8 relative transform md:-translate-y-4 flex flex-col" data-aos="fade-up" data-aos-delay="100">
+          <span class="absolute top-0 right-0 bg-violet-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl rounded-tr-2xl uppercase tracking-wider">Recommended</span>
+          <div>
+            <h3 class="font-bold text-xl text-white">Llama 3.2 3B</h3>
+            <p class="text-sm text-stone-400 mt-1">Instruct · Q4_K_M</p>
+          </div>
+          <div class="mb-6 mt-4 space-y-2 text-sm">
+            <div class="flex justify-between gap-4">
+              <span class="text-stone-400">Size</span>
+              <span class="text-white font-medium">~2 GB</span>
+            </div>
+            <div class="flex justify-between gap-4 items-center">
+              <span class="text-stone-400">Speed</span>
+              <span class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-mono text-xs font-bold">~1 tok/s</span>
+            </div>
+            <div class="flex justify-between gap-4">
+              <span class="text-stone-400">RAM</span>
+              <span class="text-white font-medium">~2.5 GB</span>
+            </div>
+          </div>
+          <a href="https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF" target="_blank" rel="noopener noreferrer" class="w-full py-3 rounded-xl bg-violet-600 text-white font-bold text-center hover:bg-violet-500 transition mb-8 shadow-lg block">
+            Download →
+          </a>
+          <ul class="space-y-4 mt-auto">
+            <li class="flex items-center gap-2 text-sm text-stone-300">
+              <i class="ph ph-check text-violet-400 shrink-0"></i>
+              Better response quality
+            </li>
+            <li class="flex items-center gap-2 text-sm text-stone-300">
+              <i class="ph ph-check text-violet-400 shrink-0"></i>
+              Stronger reasoning
+            </li>
+            <li class="flex items-center gap-2 text-sm text-stone-300">
+              <i class="ph ph-check text-violet-400 shrink-0"></i>
+              Fits in 8 GB RAM
+            </li>
+          </ul>
+        </div>
+
+        <!-- Mistral 7B -->
+        <div class="glass-card rounded-3xl p-8 border border-white/50 relative group hover:border-violet-200/50 transition duration-300 flex flex-col" data-aos="fade-up" data-aos-delay="200">
+          <div>
+            <h3 class="font-bold text-xl text-stone-900">Mistral 7B</h3>
+            <p class="text-sm text-stone-500 mt-1">Instruct v0.3 · Q4_K_M</p>
+          </div>
+          <div class="mb-6 mt-4 space-y-2 text-sm">
+            <div class="flex justify-between gap-4">
+              <span class="text-stone-400">Size</span>
+              <span class="text-stone-700 font-medium">~4.1 GB</span>
+            </div>
+            <div class="flex justify-between gap-4 items-center">
+              <span class="text-stone-400">Speed</span>
+              <span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-mono text-xs font-bold">&lt;1 tok/s</span>
+            </div>
+            <div class="flex justify-between gap-4">
+              <span class="text-stone-400">RAM</span>
+              <span class="text-stone-700 font-medium">~5 GB</span>
+            </div>
+          </div>
+          <a href="https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.3-GGUF" target="_blank" rel="noopener noreferrer" class="w-full py-3 rounded-xl glass-card font-bold text-stone-600 text-center hover:bg-violet-50/50 transition mb-8 block">
+            Download →
+          </a>
+          <ul class="space-y-4 mt-auto">
+            <li class="flex items-center gap-2 text-sm text-stone-600">
+              <i class="ph ph-check text-violet-700 shrink-0"></i>
+              Highest quality output
+            </li>
+            <li class="flex items-center gap-2 text-sm text-stone-600">
+              <i class="ph ph-check text-violet-700 shrink-0"></i>
+              Best for complex tasks
+            </li>
+            <li class="flex items-center gap-2 text-sm text-stone-600">
+              <i class="ph ph-check text-violet-700 shrink-0"></i>
+              Requires 16 GB RAM
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-20 px-6 relative">
+    <div class="max-w-7xl mx-auto rounded-[3rem] glass-featured-dark relative overflow-hidden text-center py-24 px-6" data-aos="zoom-in-up">
+      <div class="absolute top-[-100px] left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-violet-600/20 rounded-full blur-[100px] pointer-events-none" aria-hidden="true"></div>
+      <div class="absolute inset-0 opacity-10 pointer-events-none" aria-hidden="true" style="background-image: radial-gradient(circle, rgba(255,255,255,0.3) 1px, transparent 1px); background-size: 24px 24px;"></div>
+
+      <div class="relative z-10">
+        <span class="text-xs font-bold tracking-widest text-violet-400 uppercase mb-4 block">OPEN SOURCE</span>
+        <h2 class="font-serif text-4xl sm:text-5xl md:text-6xl italic mb-6 text-white leading-tight">
+          Run it on your machine.
+        </h2>
+        <p class="text-lg sm:text-xl text-stone-400 mb-10 max-w-2xl mx-auto leading-relaxed">
+          Your data never leaves your computer. No telemetry, no accounts, no subscriptions. Clone the repo, download a model, and start chatting.
+        </p>
+        <div class="flex flex-col sm:flex-row justify-center gap-4">
+          <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" class="bg-white text-stone-900 px-8 py-4 rounded-full flex items-center justify-center gap-3 hover:bg-violet-100 transition shadow-lg hover:scale-105 font-bold">
+            Clone on GitHub
+            <i class="ph ph-arrow-right"></i>
+          </a>
+          <a href="https://github.com/fatinm1/LLM-Engine/blob/main/README.md" target="_blank" rel="noopener noreferrer" class="text-white border border-stone-600 px-8 py-4 rounded-full font-medium hover:bg-white/10 transition">
+            Read the README
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="glass-card text-stone-500 py-20 text-sm border-t border-white/40">
+    <div class="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-5 gap-10">
+      <div class="col-span-2 md:col-span-1">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="w-10 h-10 rounded-xl bg-violet-700 flex items-center justify-center text-white font-mono text-sm font-bold shrink-0">&gt;_</span>
+          <span class="font-bold text-lg tracking-tight text-stone-900">LLM Engine</span>
+        </div>
+        <p class="text-stone-400 mb-6 text-sm leading-relaxed">Local inference, no cloud required.</p>
+      </div>
+
+      <div>
+        <p class="text-stone-900 font-bold uppercase text-[10px] tracking-widest mb-4">Project</p>
+        <ul class="space-y-3">
+          <li><a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" class="hover:text-violet-700 transition">Source Code</a></li>
+          <li><a href="https://github.com/fatinm1/LLM-Engine/blob/main/README.md" target="_blank" rel="noopener noreferrer" class="hover:text-violet-700 transition">README</a></li>
+          <li><a href="https://github.com/fatinm1/LLM-Engine/issues" target="_blank" rel="noopener noreferrer" class="hover:text-violet-700 transition">Issues</a></li>
+          <li><a href="https://github.com/fatinm1/LLM-Engine/releases" target="_blank" rel="noopener noreferrer" class="hover:text-violet-700 transition">Releases</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <p class="text-stone-900 font-bold uppercase text-[10px] tracking-widest mb-4">Documentation</p>
+        <ul class="space-y-3">
+          <li><a href="https://github.com/fatinm1/LLM-Engine/blob/main/README.md#build-instructions" target="_blank" rel="noopener noreferrer" class="hover:text-violet-700 transition">Build Instructions</a></li>
+          <li><a href="https://github.com/fatinm1/LLM-Engine/blob/main/README.md#getting-a-model" target="_blank" rel="noopener noreferrer" class="hover:text-violet-700 transition">Getting a Model</a></li>
+          <li><a href="https://github.com/fatinm1/LLM-Engine/blob/main/README.md#running-tests" target="_blank" rel="noopener noreferrer" class="hover:text-violet-700 transition">Running Tests</a></li>
+          <li><a href="https://github.com/fatinm1/LLM-Engine/blob/main/README.md#cli-smoke-test" target="_blank" rel="noopener noreferrer" class="hover:text-violet-700 transition">CLI Smoke Test</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <p class="text-stone-900 font-bold uppercase text-[10px] tracking-widest mb-4">Tech Stack</p>
+        <ul class="space-y-3 text-stone-400">
+          <li>C++20 / CMake</li>
+          <li>Dear ImGui / GLFW</li>
+          <li>GoogleTest</li>
+          <li>GGUF Format</li>
+        </ul>
+      </div>
+
+      <div>
+        <p class="text-stone-900 font-bold uppercase text-[10px] tracking-widest mb-4">Connect</p>
+        <ul class="space-y-3">
+          <li><a href="https://github.com/fatinm1" target="_blank" rel="noopener noreferrer" class="hover:text-violet-700 transition">GitHub</a></li>
+          <li><a href="https://linkedin.com/in/fatin-mojumder" target="_blank" rel="noopener noreferrer" class="hover:text-violet-700 transition">LinkedIn</a></li>
+          <li><a href="https://fatin.dev" target="_blank" rel="noopener noreferrer" class="hover:text-violet-700 transition">Portfolio</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto px-6 mt-20 pt-8 border-t border-white/30 flex flex-col sm:flex-row justify-between items-center gap-4">
+      <p>© 2025 Fatin Mojumder · LLM Engine · MIT License</p>
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true"></div>
+        <span class="text-xs">Built on Apple Silicon</span>
+      </div>
+    </div>
+  </footer>
+
+  <button type="button" id="backToTopBtn" class="fixed bottom-6 right-6 z-40 glass-card text-stone-700 w-12 h-12 rounded-full shadow-xl transition-all duration-300 transform translate-y-24 opacity-0 flex items-center justify-center cursor-pointer hover:text-violet-700 focus:outline-none" aria-label="Back to top">
+    <i class="ph-bold ph-arrow-up text-xl"></i>
+  </button>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      AOS.init({
+        offset: 50,
+        duration: 800,
+        easing: 'ease-out-cubic',
+        once: true,
+      });
+
       const overlay = document.getElementById('mobile-menu-overlay');
       const openBtn = document.getElementById('mobile-menu-open');
       const closeBtn = document.getElementById('mobile-menu-close');
 
       function openMenu() {
+        if (!overlay) return;
         overlay.classList.remove('hidden');
         overlay.setAttribute('aria-hidden', 'false');
         document.body.style.overflow = 'hidden';
       }
 
       function closeMenu() {
+        if (!overlay) return;
         overlay.classList.add('hidden');
         overlay.setAttribute('aria-hidden', 'true');
         document.body.style.overflow = '';
       }
 
-      openBtn.addEventListener('click', openMenu);
-      closeBtn.addEventListener('click', closeMenu);
-      overlay.querySelectorAll('[data-mobile-close]').forEach(function (el) {
-        el.addEventListener('click', closeMenu);
-      });
-      overlay.querySelectorAll('[data-mobile-link]').forEach(function (el) {
-        el.addEventListener('click', closeMenu);
-      });
-    })();
+      if (openBtn) openBtn.addEventListener('click', openMenu);
+      if (closeBtn) closeBtn.addEventListener('click', closeMenu);
+      if (overlay) {
+        overlay.querySelectorAll('[data-mobile-close]').forEach((el) => {
+          el.addEventListener('click', closeMenu);
+        });
+        overlay.querySelectorAll('[data-mobile-link]').forEach((el) => {
+          el.addEventListener('click', closeMenu);
+        });
+      }
+
+      const backToTopBtn = document.getElementById('backToTopBtn');
+      if (backToTopBtn) {
+        backToTopBtn.addEventListener('click', () => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+        window.addEventListener('scroll', () => {
+          if (window.scrollY > 400) {
+            backToTopBtn.classList.remove('translate-y-24', 'opacity-0');
+            backToTopBtn.classList.add('translate-y-0', 'opacity-100');
+          } else {
+            backToTopBtn.classList.add('translate-y-24', 'opacity-0');
+            backToTopBtn.classList.remove('translate-y-0', 'opacity-100');
+          }
+        });
+      }
+    });
   </script>
 </body>
 </html>
