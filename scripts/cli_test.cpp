@@ -30,12 +30,25 @@ int main(int argc, char** argv) {
 
     std::string prompt = "The capital of France is";
     std::cout << "\nPrompt: " << prompt << "\n";
+
+    auto tokens = model->tokenizer().encode(prompt, true);
+    std::cout << "Encoded: ";
+    for (auto t : tokens) {
+        std::cout << t << " ";
+    }
+    std::cout << "\n";
+
     std::cout << "Response: " << std::flush;
 
+    int token_count = 0;
     std::string response = model->generate(
         prompt, scfg, 20,
-        [](llm::TokenID, const std::string& piece) -> bool {
-            std::cout << piece << std::flush;
+        [&](llm::TokenID id, const std::string& piece) -> bool {
+            if (token_count++ < 5) {
+                std::cout << "[id=" << id << " piece='" << piece << "'] " << std::flush;
+            } else {
+                std::cout << piece << std::flush;
+            }
             return true;
         }
     );
