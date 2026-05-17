@@ -38,6 +38,7 @@ add_library(llm_core STATIC
     src/core/tokenizer.cpp
     src/core/kv_cache.cpp
     src/core/sampler.cpp
+    src/core/model.cpp
 )
 target_include_directories(llm_core PUBLIC
     ${CMAKE_SOURCE_DIR}/include
