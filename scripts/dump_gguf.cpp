@@ -25,9 +25,8 @@ int main(int argc, char** argv)
             ++shown;
         }
 
-        std::cout << "\nTensors (first 5):\n";
-        const size_t n = std::min<size_t>(5, file.tensors.size());
-        for (size_t i = 0; i < n; ++i) {
+        std::cout << "\nTensors (" << file.tensors.size() << "):\n";
+        for (size_t i = 0; i < file.tensors.size(); ++i) {
             const auto& t = file.tensors[i];
             std::cout << "  " << t.name << " type=" << llm::ggml_type_name(t.type) << " shape=[";
             for (size_t d = 0; d < t.shape.size(); ++d) {
