@@ -33,28 +33,58 @@ std::vector<std::string> gguf_string_array(const GGUFFile& gguf, const std::stri
     return out;
 }
 
-std::vector<float> gguf_float_array(const GGUFFile& gguf, const std::string& key)
+enum class TokenType : int32_t {
+    NORMAL = 1,
+};
+
+std::vector<float> load_optional_scores(const GGUFFile& gguf, size_t vocab_size)
 {
-    const auto it = gguf.metadata.find(key);
+    std::vector<float> scores(vocab_size, 0.0f);
+    const auto it = gguf.metadata.find("tokenizer.ggml.scores");
     if (it == gguf.metadata.end()) {
-        throw std::runtime_error("GGUF metadata missing array key: " + key);
+        return scores;
     }
     const auto* arr = std::get_if<GGUFArray>(&it->second);
     if (arr == nullptr) {
-        throw std::runtime_error("GGUF metadata key is not an array: " + key);
+        return scores;
     }
-    std::vector<float> out;
-    out.reserve(arr->values.size());
-    for (const auto& v : arr->values) {
+    const size_t n = std::min(vocab_size, arr->values.size());
+    for (size_t i = 0; i < n; ++i) {
+        const auto& v = arr->values[i];
         if (const auto* f = std::get_if<float>(&v)) {
-            out.push_back(*f);
+            scores[i] = *f;
         } else if (const auto* d = std::get_if<double>(&v)) {
-            out.push_back(static_cast<float>(*d));
-        } else {
-            throw std::runtime_error("GGUF array element for " + key + " is not float");
+            scores[i] = static_cast<float>(*d);
         }
     }
-    return out;
+    return scores;
+}
+
+std::vector<int32_t> load_optional_token_types(const GGUFFile& gguf, size_t vocab_size)
+{
+    std::vector<int32_t> types(vocab_size, static_cast<int32_t>(TokenType::NORMAL));
+    const auto it = gguf.metadata.find("tokenizer.ggml.token_type");
+    if (it == gguf.metadata.end()) {
+        return types;
+    }
+    const auto* arr = std::get_if<GGUFArray>(&it->second);
+    if (arr == nullptr) {
+        return types;
+    }
+    const size_t n = std::min(vocab_size, arr->values.size());
+    for (size_t i = 0; i < n; ++i) {
+        const auto& v = arr->values[i];
+        if (const auto* t = std::get_if<int32_t>(&v)) {
+            types[i] = *t;
+        } else if (const auto* t = std::get_if<uint32_t>(&v)) {
+            types[i] = static_cast<int32_t>(*t);
+        } else if (const auto* t = std::get_if<int16_t>(&v)) {
+            types[i] = static_cast<int32_t>(*t);
+        } else if (const auto* t = std::get_if<uint16_t>(&v)) {
+            types[i] = static_cast<int32_t>(*t);
+        }
+    }
+    return types;
 }
 
 uint32_t metadata_token_id(const GGUFFile& gguf, const std::string& key, uint32_t def)
@@ -79,13 +109,9 @@ uint32_t metadata_token_id(const GGUFFile& gguf, const std::string& key, uint32_
 Tokenizer::Tokenizer(const GGUFFile& gguf)
 {
     vocab_ = gguf_string_array(gguf, "tokenizer.ggml.tokens");
-    const std::vector<float> scores = gguf_float_array(gguf, "tokenizer.ggml.scores");
-
-    if (scores.size() != vocab_.size()) {
-        throw std::runtime_error(
-            "tokenizer.ggml.scores size " + std::to_string(scores.size()) +
-            " != vocab size " + std::to_string(vocab_.size()));
-    }
+    const std::vector<float> scores = load_optional_scores(gguf, vocab_.size());
+    [[maybe_unused]] const std::vector<int32_t> token_types =
+        load_optional_token_types(gguf, vocab_.size());
 
     for (size_t i = 0; i < vocab_.size(); ++i) {
         token_to_id_[vocab_[i]] = static_cast<TokenID>(i);
