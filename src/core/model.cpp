@@ -4,6 +4,7 @@
 #include "core/tokenizer.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
@@ -213,6 +214,65 @@ const std::vector<float>& Model::forward(TokenID token, size_t pos)
     simd::matvec(output_proj_.data(), x_norm_.data(), logits_.data(), cfg_.vocab_size, D);
 
     return logits_;
+}
+
+std::string Model::generate(const std::string& prompt,
+                            const SamplerConfig& sampler_cfg,
+                            size_t max_new_tokens,
+                            TokenCallback callback)
+{
+    Sampler sampler(sampler_cfg);
+    std::vector<TokenID> context = tokenizer_->encode(prompt, true);
+
+    if (context.empty()) {
+        throw std::runtime_error("Model::generate: empty token sequence");
+    }
+
+    std::string output;
+    tokens_generated_ = 0;
+    const auto t_start = std::chrono::steady_clock::now();
+
+    for (size_t i = 0; i + 1 < context.size(); ++i) {
+        if (kv_cache_.is_full()) {
+            break;
+        }
+        forward(context[i], kv_cache_.size());
+        kv_cache_.advance();
+    }
+
+    TokenID next = context.back();
+
+    for (size_t step = 0; step < max_new_tokens; ++step) {
+        if (kv_cache_.is_full()) {
+            break;
+        }
+
+        const std::vector<float>& logits_ref = forward(next, kv_cache_.size());
+        std::vector<float> logits(logits_ref.begin(), logits_ref.end());
+        kv_cache_.advance();
+
+        next = sampler.sample(logits, context);
+        context.push_back(next);
+
+        if (tokenizer_->is_eos(next)) {
+            break;
+        }
+
+        const std::string piece = tokenizer_->decode_token(next);
+        output += piece;
+        ++tokens_generated_;
+
+        const auto now = std::chrono::steady_clock::now();
+        const float elapsed =
+            std::chrono::duration<float>(now - t_start).count();
+        tps_ = elapsed > 0.f ? static_cast<float>(tokens_generated_) / elapsed : 0.f;
+
+        if (callback && !callback(next, piece)) {
+            break;
+        }
+    }
+
+    return output;
 }
 
 }  // namespace llm
