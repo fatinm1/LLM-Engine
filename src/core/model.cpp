@@ -35,6 +35,7 @@ std::vector<float> Model::dequant_tensor(const std::string& name)
     case GGMLType::F32:
         std::memcpy(out.data(), t->data, n_elems * sizeof(float));
         break;
+    case GGMLType::Q4_K_S:
     case GGMLType::Q4_K_M: {
         size_t n_blocks = n_elems / 256;
         simd::dequant_q4_k_m(t->data, out.data(), n_blocks);
