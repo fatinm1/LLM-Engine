@@ -33,8 +33,11 @@ std::vector<std::string> gguf_string_array(const GGUFFile& gguf, const std::stri
     return out;
 }
 
+constexpr TokenID TOKEN_UNK = 0;
+
 enum class TokenType : int32_t {
     NORMAL = 1,
+    BYTE = 6,
 };
 
 std::vector<float> load_optional_scores(const GGUFFile& gguf, size_t vocab_size)
@@ -110,14 +113,13 @@ Tokenizer::Tokenizer(const GGUFFile& gguf)
 {
     vocab_ = gguf_string_array(gguf, "tokenizer.ggml.tokens");
     const std::vector<float> scores = load_optional_scores(gguf, vocab_.size());
-    [[maybe_unused]] const std::vector<int32_t> token_types =
-        load_optional_token_types(gguf, vocab_.size());
+    const std::vector<int32_t> token_types = load_optional_token_types(gguf, vocab_.size());
 
     for (size_t i = 0; i < vocab_.size(); ++i) {
         token_to_id_[vocab_[i]] = static_cast<TokenID>(i);
     }
 
-    byte_tokens_.fill(-1);
+    byte_tokens_.fill(TOKEN_UNK);
     for (size_t b = 0; b < 256; ++b) {
         char label[8];
         std::snprintf(label, sizeof(label), "<0x%02X>", static_cast<int>(b));
@@ -125,6 +127,17 @@ Tokenizer::Tokenizer(const GGUFFile& gguf)
         if (it != token_to_id_.end()) {
             byte_tokens_[b] = it->second;
         }
+    }
+    for (size_t i = 0; i < vocab_.size(); ++i) {
+        if (token_types[i] != static_cast<int32_t>(TokenType::BYTE)) {
+            continue;
+        }
+        const std::string& tok = vocab_[i];
+        if (tok.size() != 1) {
+            continue;
+        }
+        const unsigned char b = static_cast<unsigned char>(tok[0]);
+        byte_tokens_[b] = static_cast<TokenID>(i);
     }
 
     bos_id_ = static_cast<TokenID>(metadata_token_id(gguf, "tokenizer.ggml.bos_token_id", TOKEN_BOS));
@@ -235,11 +248,7 @@ std::vector<TokenID> Tokenizer::encode(const std::string& text, bool add_bos) co
         } else {
             for (unsigned char b : ch) {
                 const TokenID bt = byte_tokens_[b];
-                if (bt >= 0) {
-                    symbols.push_back(vocab_[static_cast<size_t>(bt)]);
-                } else {
-                    throw std::runtime_error("No byte token for value " + std::to_string(b));
-                }
+                symbols.push_back(vocab_[static_cast<size_t>(bt)]);
             }
         }
     }
