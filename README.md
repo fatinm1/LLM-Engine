@@ -1,5 +1,11 @@
 # LLM Engine
 
+## Live Demo
+
+[fatinm1.github.io/LLM-Engine](https://fatinm1.github.io/LLM-Engine)
+
+> Enable GitHub Pages: repo Settings → Pages → Source: Deploy from branch → Branch: `main` → Folder: `/docs`
+
 A C++ desktop application that runs local LLM inference entirely on CPU — no internet, no API keys, no cloud.
 
 **Build:** Passing | **Platform:** macOS / Linux / Windows | **Language:** C++20 | **License:** MIT
