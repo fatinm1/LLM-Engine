@@ -180,10 +180,38 @@ void Model::attention(size_t L, size_t pos)
     simd::add(x_.data(), proj_out_.data(), x_.data(), D);
 }
 
-void Model::ffn(size_t /*L*/) {}
-
-const std::vector<float>& Model::forward(TokenID /*token*/, size_t /*pos*/)
+void Model::ffn(size_t L)
 {
+    const size_t D = cfg_.embed_dim;
+    const size_t FF = cfg_.ff_dim;
+
+    simd::rms_norm(x_.data(), layer_ffn_norm_[L].data(), x_norm_.data(), D);
+
+    simd::matvec(layer_w_gate_[L].data(), x_norm_.data(), gate_.data(), FF, D);
+    simd::matvec(layer_w_up_[L].data(), x_norm_.data(), up_.data(), FF, D);
+
+    simd::silu(gate_.data(), gate_.data(), FF);
+    simd::mul(gate_.data(), up_.data(), gate_.data(), FF);
+
+    simd::matvec(layer_w_down_[L].data(), gate_.data(), ffn_out_.data(), D, FF);
+    simd::add(x_.data(), ffn_out_.data(), x_.data(), D);
+}
+
+const std::vector<float>& Model::forward(TokenID token, size_t pos)
+{
+    const size_t D = cfg_.embed_dim;
+
+    const float* emb = token_embd_.data() + static_cast<size_t>(token) * D;
+    std::memcpy(x_.data(), emb, D * sizeof(float));
+
+    for (size_t L = 0; L < cfg_.n_layers; ++L) {
+        attention(L, pos);
+        ffn(L);
+    }
+
+    simd::rms_norm(x_.data(), output_norm_.data(), x_norm_.data(), D);
+    simd::matvec(output_proj_.data(), x_norm_.data(), logits_.data(), cfg_.vocab_size, D);
+
     return logits_;
 }
 
