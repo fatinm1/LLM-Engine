@@ -46,6 +46,9 @@ public:
     float              tokens_per_second()const { return tps_; }
     size_t             tokens_generated() const { return tokens_generated_; }
 
+    // Temporary debug accessor
+    const std::vector<float>& last_logits() const { return logits_; }
+
 private:
     explicit Model(GGUFFile& gguf);
 
