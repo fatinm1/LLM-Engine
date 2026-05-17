@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 
@@ -158,6 +159,40 @@ Tokenizer::Tokenizer(const GGUFFile& gguf)
             }
         }
     }
+
+    const auto it20 = token_to_id_.find(" ");
+    if (it20 != token_to_id_.end()) {
+        std::cerr << "space token: " << it20->second << "\n";
+    } else {
+        std::cerr << "bare space not in vocab\n";
+    }
+
+    auto check = [&](const std::string& s) {
+        const auto it = token_to_id_.find(s);
+        std::cerr << (it != token_to_id_.end()
+                          ? "FOUND '" + s + "' -> " + std::to_string(it->second)
+                          : "NOT FOUND '" + s + "'")
+                  << "\n";
+    };
+    check(" The");
+    check(" capital");
+    check(" of");
+    check(" France");
+    check(" is");
+
+    std::cerr << "byte_tokens_[0x20] = " << byte_tokens_[0x20] << "\n";
+
+    for (int i = 215; i < 225; ++i) {
+        if (i < static_cast<int>(vocab_.size())) {
+            const std::string& t = vocab_[static_cast<size_t>(i)];
+            std::cerr << "vocab[" << i << "] = '";
+            for (unsigned char c : t) {
+                std::cerr << "\\x" << std::hex << static_cast<int>(c);
+            }
+            std::cerr << "'\n";
+        }
+    }
+    std::cerr << std::dec;
 }
 
 std::vector<std::string> Tokenizer::utf8_chars(const std::string& text)
