@@ -7,6 +7,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -104,6 +106,30 @@ Model::Model(GGUFFile& gguf) : gguf_(gguf)
         layer_w_down_[L] = dequant_tensor(p + "ffn_down.weight");
     }
 
+    auto print_layer0_stats = [](const std::vector<float>& w, const char* label) {
+        int nan_count = 0, inf_count = 0, zero_count = 0;
+        float min_val = std::numeric_limits<float>::max();
+        float max_val = -std::numeric_limits<float>::max();
+        for (float v : w) {
+            if (std::isnan(v)) {
+                ++nan_count;
+            } else if (std::isinf(v)) {
+                ++inf_count;
+            } else {
+                if (v == 0.f) {
+                    ++zero_count;
+                }
+                min_val = std::min(min_val, v);
+                max_val = std::max(max_val, v);
+            }
+        }
+        std::cerr << label << " stats: size=" << w.size() << " nan=" << nan_count << " inf=" << inf_count
+                  << " zeros=" << zero_count << " min=" << min_val << " max=" << max_val << "\n";
+    };
+    print_layer0_stats(layer_wq_[0], "layer_wq_[0]");
+    print_layer0_stats(layer_wk_[0], "layer_wk_[0]");
+    print_layer0_stats(layer_attn_norm_[0], "layer_attn_norm_[0]");
+
     const uint32_t cache_len = std::min(cfg_.max_seq_len, static_cast<uint32_t>(4096));
     kv_cache_.init(cache_len, cfg_.n_layers, cfg_.n_kv_heads, cfg_.head_dim);
 
@@ -153,19 +179,43 @@ void Model::attention(size_t L, size_t pos)
     const size_t GQ = H / KH;
     const float sc = 1.0f / std::sqrt(static_cast<float>(Dh));
 
+    auto check_nan = [&](const std::vector<float>& v, const char* label) {
+        for (float f : v) {
+            if (std::isnan(f)) {
+                std::cerr << "NaN in " << label << " layer=" << L << " pos=" << pos << "\n";
+                return;
+            }
+        }
+    };
+    auto check_nan_ptr = [&](const float* p, size_t n, const char* label) {
+        for (size_t i = 0; i < n; ++i) {
+            if (std::isnan(p[i])) {
+                std::cerr << "NaN in " << label << " layer=" << L << " pos=" << pos << "\n";
+                return;
+            }
+        }
+    };
+
     simd::rms_norm(x_.data(), layer_attn_norm_[L].data(), x_norm_.data(), D);
+    check_nan(x_norm_, "x_norm after rms_norm");
 
     simd::matvec(layer_wq_[L].data(), x_norm_.data(), q_.data(), H * Dh, D);
+    check_nan(q_, "q after wq matvec");
+
     simd::matvec(layer_wk_[L].data(), x_norm_.data(), k_.data(), KH * Dh, D);
+    check_nan(k_, "k after wk matvec");
+
     simd::matvec(layer_wv_[L].data(), x_norm_.data(), v_.data(), KH * Dh, D);
+    check_nan(v_, "v after wv matvec");
 
     apply_rope(pos);
+    check_nan(q_, "q after rope");
+    check_nan(k_, "k after rope");
 
     std::memcpy(kv_cache_.key_at(L, pos), k_.data(), KH * Dh * sizeof(float));
     std::memcpy(kv_cache_.val_at(L, pos), v_.data(), KH * Dh * sizeof(float));
 
     const size_t seq_len = pos + 1;
-
     std::fill(attn_out_.begin(), attn_out_.end(), 0.0f);
 
     for (size_t h = 0; h < H; ++h) {
@@ -177,8 +227,10 @@ void Model::attention(size_t L, size_t pos)
             const float* kh = kv_cache_.key_at(L, t) + kv_h * Dh;
             attn_scores_[t] = simd::dot(qh, kh, Dh) * sc;
         }
+        check_nan_ptr(attn_scores_.data(), seq_len, "attn_scores after dot");
 
         simd::softmax(attn_scores_.data(), seq_len);
+        check_nan_ptr(attn_scores_.data(), seq_len, "attn_scores after softmax");
 
         for (size_t t = 0; t < seq_len; ++t) {
             const float* vh = kv_cache_.val_at(L, t) + kv_h * Dh;
@@ -188,9 +240,13 @@ void Model::attention(size_t L, size_t pos)
             }
         }
     }
+    check_nan(attn_out_, "attn_out after weighted sum");
 
     simd::matvec(layer_wo_[L].data(), attn_out_.data(), proj_out_.data(), D, H * Dh);
+    check_nan(proj_out_, "proj_out after wo matvec");
+
     simd::add(x_.data(), proj_out_.data(), x_.data(), D);
+    check_nan(x_, "x after residual add");
 }
 
 void Model::ffn(size_t L)
@@ -219,11 +275,45 @@ const std::vector<float>& Model::forward(TokenID token, size_t pos)
 
     for (size_t L = 0; L < cfg_.n_layers; ++L) {
         attention(L, pos);
+
+        bool has_nan = false;
+        for (float v : x_) {
+            if (std::isnan(v)) {
+                has_nan = true;
+                break;
+            }
+        }
+        if (has_nan) {
+            std::cerr << "NaN in x_ after attention layer " << L << "\n";
+            break;
+        }
+
         ffn(L);
+
+        for (float v : x_) {
+            if (std::isnan(v)) {
+                std::cerr << "NaN in x_ after ffn layer " << L << "\n";
+                break;
+            }
+        }
     }
 
     simd::rms_norm(x_.data(), output_norm_.data(), x_norm_.data(), D);
     simd::matvec(output_proj_.data(), x_norm_.data(), logits_.data(), cfg_.vocab_size, D);
+
+    int nan_count = 0, inf_count = 0;
+    for (float v : logits_) {
+        if (std::isnan(v)) {
+            ++nan_count;
+        }
+        if (std::isinf(v)) {
+            ++inf_count;
+        }
+    }
+    if (nan_count > 0 || inf_count > 0) {
+        std::cerr << "forward(token=" << token << " pos=" << pos << "): nan=" << nan_count
+                  << " inf=" << inf_count << "\n";
+    }
 
     return logits_;
 }
