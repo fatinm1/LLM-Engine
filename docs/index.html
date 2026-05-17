@@ -509,6 +509,97 @@
     </div>
   </section>
 
+  <!-- Features -->
+  <section id="features" class="py-24 px-6 overflow-hidden">
+    <div class="max-w-7xl mx-auto rounded-3xl glass-card p-8 md:p-16 relative overflow-hidden" data-aos="fade-up">
+      <div class="absolute -top-40 -left-40 w-96 h-96 bg-violet-200/40 rounded-full blur-[80px] pointer-events-none" aria-hidden="true"></div>
+      <div class="absolute -bottom-40 -right-40 w-96 h-96 bg-blue-200/40 rounded-full blur-[80px] pointer-events-none" aria-hidden="true"></div>
+
+      <div class="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center relative z-10">
+        <div class="relative group">
+          <div class="absolute inset-4 bg-stone-100/80 rounded-2xl rotate-3 group-hover:rotate-6 transition duration-500 -z-10" aria-hidden="true"></div>
+
+          <div class="rounded-2xl glass-card h-[450px] overflow-hidden p-6 md:p-8 relative transform -rotate-1 group-hover:rotate-0 transition duration-500">
+            <div class="flex items-center gap-2 text-xs text-stone-500 mb-4">
+              <i class="ph ph-arrow-left text-stone-400"></i>
+              <span class="text-stone-400">src/core /</span>
+              <span class="font-medium text-stone-600">gguf_parser.cpp</span>
+            </div>
+
+            <h3 class="text-xl font-serif font-bold text-stone-900 mb-6">gguf_parser.cpp</h3>
+
+            <pre class="bg-stone-900 rounded-xl p-5 font-mono text-sm leading-relaxed text-stone-200 overflow-x-auto"><code><span class="text-stone-500">// Zero-copy model loading via mmap</span>
+<span class="text-violet-400">file</span>.mmap_ptr = <span class="text-blue-400">mmap</span>(
+  <span class="text-stone-300">nullptr</span>, file_size,
+  <span class="text-emerald-400">PROT_READ</span>, <span class="text-emerald-400">MAP_PRIVATE</span>,
+  fd, <span class="text-amber-400">0</span>
+);
+
+<span class="text-stone-500">// Tensor weights point directly into</span>
+<span class="text-stone-500">// the mapped region — no memcpy</span>
+tensor.<span class="text-violet-400">data</span> = base
+  + data_offset
+  + tensor.<span class="text-violet-400">offset</span>;</code></pre>
+
+            <div class="absolute bottom-8 left-6 right-6 md:left-8 md:right-8 flex items-center gap-4 glass-card rounded-2xl px-4 py-3 animate-float shadow-lg">
+              <div class="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center text-violet-700 shrink-0">
+                <i class="ph ph-lightning text-xl"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-semibold text-stone-900">Tensor loaded</p>
+                <p class="text-xs text-stone-500 mt-0.5 truncate">token_embd.weight · 808 MB · zero copy</p>
+              </div>
+              <button type="button" class="w-9 h-9 rounded-full bg-white/50 hover:bg-white/70 flex items-center justify-center text-stone-600 shrink-0 transition" aria-label="Tensor details">
+                <i class="ph ph-arrow-right"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div data-aos="fade-left" data-aos-delay="200">
+          <span class="text-xs font-bold tracking-widest text-violet-700 uppercase mb-2 block">ZERO COPY</span>
+          <h2 class="font-serif text-4xl md:text-5xl text-stone-900 leading-tight mb-6">
+            Memory-mapped<br>model loading
+          </h2>
+          <p class="text-stone-600 text-lg leading-relaxed mb-8">
+            The GGUF binary is opened with mmap — tensor weight pointers point directly into the mapped region. Loading an 808 MB model never copies a single byte into heap memory. The OS pages in only the weights that are actually touched during inference.
+          </p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-4">
+            <div class="flex gap-3">
+              <i class="ph ph-file-arrow-down text-xl text-stone-400 mt-0.5 shrink-0"></i>
+              <div>
+                <p class="text-sm font-semibold text-stone-900">GGUF v3 support</p>
+                <p class="text-sm text-stone-500 mt-0.5">Parses all metadata and tensor layouts</p>
+              </div>
+            </div>
+            <div class="flex gap-3">
+              <i class="ph ph-arrows-split text-xl text-stone-400 mt-0.5 shrink-0"></i>
+              <div>
+                <p class="text-sm font-semibold text-stone-900">madvise hints</p>
+                <p class="text-sm text-stone-500 mt-0.5">Sequential load, then random access</p>
+              </div>
+            </div>
+            <div class="flex gap-3">
+              <i class="ph ph-devices text-xl text-stone-400 mt-0.5 shrink-0"></i>
+              <div>
+                <p class="text-sm font-semibold text-stone-900">Cross-platform</p>
+                <p class="text-sm text-stone-500 mt-0.5">mmap on Linux/macOS, MapViewOfFile on Windows</p>
+              </div>
+            </div>
+            <div class="flex gap-3">
+              <i class="ph ph-lock-key text-xl text-stone-400 mt-0.5 shrink-0"></i>
+              <div>
+                <p class="text-sm font-semibold text-stone-900">Zero heap allocation</p>
+                <p class="text-sm text-stone-500 mt-0.5">Model weights never touch malloc</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <script>
     AOS.init({ duration: 800, once: true, offset: 80 });
 
