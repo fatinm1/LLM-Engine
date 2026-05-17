@@ -270,6 +270,45 @@ void dequant_q8_0(const void* src, float* out, size_t n_blocks)
     }
 }
 
+namespace {
+
+int q3_k_m_unpack_scale(const uint8_t* scales, int s)
+{
+    const int off = s * 6;
+    const int i = off / 8;
+    const int sh = off % 8;
+    uint16_t w = scales[i];
+    if (i + 1 < 12) {
+        w |= static_cast<uint16_t>(scales[i + 1]) << 8;
+    }
+    return static_cast<int>((w >> sh) & 0x3F);
+}
+
+}  // namespace
+
+void dequant_q3_k_m(const void* src, float* out, size_t n_blocks)
+{
+    const auto* blocks = static_cast<const uint8_t*>(src);
+    size_t out_idx = 0;
+    for (size_t b = 0; b < n_blocks; ++b) {
+        const uint8_t* block = blocks + b * 110;
+        const float d = fp16_to_fp32(static_cast<uint16_t>(block[0]) |
+                                     (static_cast<uint16_t>(block[1]) << 8));
+        const uint8_t* scales = block + 2;
+        const uint8_t* hmask = block + 14;
+        const uint8_t* qs = block + 46;
+
+        for (int i = 0; i < 256; ++i) {
+            const int low2 = (qs[i / 4] >> (2 * (i % 4))) & 0x3;
+            const int high = (hmask[i / 8] >> (i % 8)) & 0x1;
+            const int raw = low2 | (high << 2);
+            const int sb = i / 16;
+            const float scale_s = static_cast<float>(q3_k_m_unpack_scale(scales, sb));
+            out[out_idx++] = d * scale_s * static_cast<float>(raw - 4);
+        }
+    }
+}
+
 void dequant_q4_k_m(const void* src, float* out, size_t n_blocks)
 {
     const auto* blocks = static_cast<const uint8_t*>(src);

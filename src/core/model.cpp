@@ -35,6 +35,12 @@ std::vector<float> Model::dequant_tensor(const std::string& name)
     case GGMLType::F32:
         std::memcpy(out.data(), t->data, n_elems * sizeof(float));
         break;
+    case GGMLType::Q3_K_M:
+    case GGMLType::Q3_K_L: {
+        size_t n_blocks = n_elems / 256;
+        simd::dequant_q3_k_m(t->data, out.data(), n_blocks);
+        break;
+    }
     case GGMLType::Q4_K_S:
     case GGMLType::Q4_K_M: {
         size_t n_blocks = n_elems / 256;
@@ -68,7 +74,12 @@ Model::Model(GGUFFile& gguf) : gguf_(gguf)
 
     token_embd_ = dequant_tensor("token_embd.weight");
     output_norm_ = dequant_tensor("output_norm.weight");
-    output_proj_ = dequant_tensor("output.weight");
+    // Try output.weight first; fall back to token_embd.weight (weight tying)
+    if (gguf_.find_tensor("output.weight")) {
+        output_proj_ = dequant_tensor("output.weight");
+    } else {
+        output_proj_ = token_embd_;
+    }
 
     layer_attn_norm_.resize(cfg_.n_layers);
     layer_wq_.resize(cfg_.n_layers);

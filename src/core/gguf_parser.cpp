@@ -67,14 +67,14 @@ size_t ggml_type_block_size(GGMLType type)
     switch (type) {
     case GGMLType::Q4_K_S:
     case GGMLType::Q4_K_M:
-    case GGMLType::Q4_K:
-    case GGMLType::Q5_K:
     case GGMLType::Q5_K_S:
     case GGMLType::Q5_K_M:
     case GGMLType::Q6_K:
     case GGMLType::Q8_K:
     case GGMLType::Q2_K:
     case GGMLType::Q3_K:
+    case GGMLType::Q3_K_M:
+    case GGMLType::Q3_K_L:
         return 256;
     case GGMLType::Q4_0:
     case GGMLType::Q4_1:
@@ -109,9 +109,7 @@ size_t ggml_type_bytes_per_block(GGMLType type)
         return 36;
     case GGMLType::Q4_K_S:
     case GGMLType::Q4_K_M:
-    case GGMLType::Q4_K:
         return 144;
-    case GGMLType::Q5_K:
     case GGMLType::Q5_K_S:
     case GGMLType::Q5_K_M:
         return 176;
@@ -122,6 +120,8 @@ size_t ggml_type_bytes_per_block(GGMLType type)
     case GGMLType::Q2_K:
         return 84;
     case GGMLType::Q3_K:
+    case GGMLType::Q3_K_M:
+    case GGMLType::Q3_K_L:
         return 110;
     default:
         return 0;

@@ -15,6 +15,7 @@ void  matvec(const float* A, const float* x, float* out, size_t m, size_t n);
 void  rms_norm(const float* x, const float* w, float* out, size_t n, float eps = 1e-5f);
 void  silu(const float* x, float* out, size_t n);
 void  softmax(float* x, size_t n);
+void  dequant_q3_k_m(const void* src, float* out, size_t n_blocks);
 void  dequant_q4_k_m(const void* src, float* out, size_t n_blocks);
 void  dequant_q8_0(const void* src, float* out, size_t n_blocks);
 
