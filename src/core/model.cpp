@@ -4,6 +4,7 @@
 #include "core/tokenizer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -107,9 +108,77 @@ Model::Model(GGUFFile& gguf) : gguf_(gguf)
     attn_scores_.resize(cache_len);
 }
 
-void Model::apply_rope(size_t /*pos*/) {}
+void Model::apply_rope(size_t pos)
+{
+    auto rotate = [&](float* buf, size_t n_h) {
+        for (size_t h = 0; h < n_h; ++h) {
+            float* hd = buf + h * cfg_.head_dim;
+            for (size_t i = 0; i < cfg_.head_dim / 2; ++i) {
+                const float theta = static_cast<float>(pos) /
+                                    std::pow(cfg_.rope_theta,
+                                             2.0f * static_cast<float>(i) /
+                                                 static_cast<float>(cfg_.head_dim));
+                const float cos_t = std::cos(theta);
+                const float sin_t = std::sin(theta);
+                const float v0 = hd[2 * i];
+                const float v1 = hd[2 * i + 1];
+                hd[2 * i] = v0 * cos_t - v1 * sin_t;
+                hd[2 * i + 1] = v0 * sin_t + v1 * cos_t;
+            }
+        }
+    };
+    rotate(q_.data(), cfg_.n_heads);
+    rotate(k_.data(), cfg_.n_kv_heads);
+}
 
-void Model::attention(size_t /*L*/, size_t /*pos*/) {}
+void Model::attention(size_t L, size_t pos)
+{
+    const size_t D = cfg_.embed_dim;
+    const size_t H = cfg_.n_heads;
+    const size_t KH = cfg_.n_kv_heads;
+    const size_t Dh = cfg_.head_dim;
+    const size_t GQ = H / KH;
+    const float sc = 1.0f / std::sqrt(static_cast<float>(Dh));
+
+    simd::rms_norm(x_.data(), layer_attn_norm_[L].data(), x_norm_.data(), D);
+
+    simd::matvec(layer_wq_[L].data(), x_norm_.data(), q_.data(), H * Dh, D);
+    simd::matvec(layer_wk_[L].data(), x_norm_.data(), k_.data(), KH * Dh, D);
+    simd::matvec(layer_wv_[L].data(), x_norm_.data(), v_.data(), KH * Dh, D);
+
+    apply_rope(pos);
+
+    std::memcpy(kv_cache_.key_at(L, pos), k_.data(), KH * Dh * sizeof(float));
+    std::memcpy(kv_cache_.val_at(L, pos), v_.data(), KH * Dh * sizeof(float));
+
+    const size_t seq_len = pos + 1;
+
+    std::fill(attn_out_.begin(), attn_out_.end(), 0.0f);
+
+    for (size_t h = 0; h < H; ++h) {
+        const size_t kv_h = h / GQ;
+        const float* qh = q_.data() + h * Dh;
+        float* oh = attn_out_.data() + h * Dh;
+
+        for (size_t t = 0; t < seq_len; ++t) {
+            const float* kh = kv_cache_.key_at(L, t) + kv_h * Dh;
+            attn_scores_[t] = simd::dot(qh, kh, Dh) * sc;
+        }
+
+        simd::softmax(attn_scores_.data(), seq_len);
+
+        for (size_t t = 0; t < seq_len; ++t) {
+            const float* vh = kv_cache_.val_at(L, t) + kv_h * Dh;
+            const float w = attn_scores_[t];
+            for (size_t i = 0; i < Dh; ++i) {
+                oh[i] += w * vh[i];
+            }
+        }
+    }
+
+    simd::matvec(layer_wo_[L].data(), attn_out_.data(), proj_out_.data(), D, H * Dh);
+    simd::add(x_.data(), proj_out_.data(), x_.data(), D);
+}
 
 void Model::ffn(size_t /*L*/) {}
 
