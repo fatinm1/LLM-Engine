@@ -7,8 +7,10 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <future>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 namespace llm {
 
@@ -117,7 +119,14 @@ Model::Model(GGUFFile& gguf) : gguf_(gguf)
     up_.resize(cfg_.ff_dim);
     ffn_out_.resize(cfg_.embed_dim);
     logits_.resize(cfg_.vocab_size);
-    attn_scores_.resize(cache_len);
+    per_head_scores_.resize(cfg_.n_heads,
+                            std::vector<float>(std::min(cfg_.max_seq_len, static_cast<uint32_t>(4096))));
+
+    const size_t n_pool_threads = std::min({
+        static_cast<size_t>(cfg_.n_heads),
+        static_cast<size_t>(std::thread::hardware_concurrency()),
+        static_cast<size_t>(8)});
+    thread_pool_ = std::make_unique<ThreadPool>(n_pool_threads);
 }
 
 void Model::apply_rope(size_t pos)
@@ -166,25 +175,35 @@ void Model::attention(size_t L, size_t pos)
     const size_t seq_len = pos + 1;
     std::fill(attn_out_.begin(), attn_out_.end(), 0.0f);
 
+    std::vector<std::future<void>> futures;
+    futures.reserve(H);
+
     for (size_t h = 0; h < H; ++h) {
-        const size_t kv_h = h / GQ;
-        const float* qh = q_.data() + h * Dh;
-        float* oh = attn_out_.data() + h * Dh;
+        futures.push_back(thread_pool_->submit([this, h, L, pos, seq_len, sc, GQ, Dh]() {
+            const size_t kv_h = h / GQ;
+            const float* qh = q_.data() + h * Dh;
+            float* oh = attn_out_.data() + h * Dh;
+            float* scores = per_head_scores_[h].data();
 
-        for (size_t t = 0; t < seq_len; ++t) {
-            const float* kh = kv_cache_.key_at(L, t) + kv_h * Dh;
-            attn_scores_[t] = simd::dot(qh, kh, Dh) * sc;
-        }
-
-        simd::softmax(attn_scores_.data(), seq_len);
-
-        for (size_t t = 0; t < seq_len; ++t) {
-            const float* vh = kv_cache_.val_at(L, t) + kv_h * Dh;
-            const float w = attn_scores_[t];
-            for (size_t i = 0; i < Dh; ++i) {
-                oh[i] += w * vh[i];
+            for (size_t t = 0; t < seq_len; ++t) {
+                const float* kh = kv_cache_.key_at(L, t) + kv_h * Dh;
+                scores[t] = simd::dot(qh, kh, Dh) * sc;
             }
-        }
+
+            simd::softmax(scores, seq_len);
+
+            for (size_t t = 0; t < seq_len; ++t) {
+                const float* vh = kv_cache_.val_at(L, t) + kv_h * Dh;
+                const float w = scores[t];
+                for (size_t i = 0; i < Dh; ++i) {
+                    oh[i] += w * vh[i];
+                }
+            }
+        }));
+    }
+
+    for (auto& f : futures) {
+        f.get();
     }
 
     simd::matvec(layer_wo_[L].data(), attn_out_.data(), proj_out_.data(), D, H * Dh);

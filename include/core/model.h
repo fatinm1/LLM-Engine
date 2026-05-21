@@ -6,6 +6,7 @@
 #include "core/gguf_parser.h"
 #include "core/kv_cache.h"
 #include "core/sampler.h"
+#include "core/thread_pool.h"
 #include "core/tokenizer.h"
 
 namespace llm {
@@ -100,7 +101,8 @@ private:
     std::vector<float> up_;         // FFN up           [ff_dim]
     std::vector<float> ffn_out_;    // after w_down     [embed_dim]
     std::vector<float> logits_;     // output logits    [vocab_size]
-    std::vector<float> attn_scores_;// attention scores [max_seq_len]
+    std::vector<std::vector<float>> per_head_scores_; // [n_heads][max_seq_len]
+    std::unique_ptr<ThreadPool> thread_pool_;
 
     // ── Generation stats ──────────────────────────────────────────────────
     float  tps_              = 0.f;
