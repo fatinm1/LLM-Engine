@@ -130,34 +130,45 @@ std::vector<float> Model::dequant_tensor(const std::string& name)
         simd::dequant_q4_k_s(t->data, out.data(), n_blocks);
         if (name == "token_embd.weight") {
             const uint8_t* raw = static_cast<const uint8_t*>(t->data);
-            uint16_t d_raw;
-            std::memcpy(&d_raw, raw + 0, 2);
-            auto fp16 = [](uint16_t h) -> float {
-                uint32_t sign = (h >> 15) & 1;
-                uint32_t exp = (h >> 10) & 0x1F;
-                uint32_t mant = h & 0x3FF;
-                uint32_t f32;
+            auto fp16_to_float = [](uint16_t h) -> float {
+                const uint32_t sign = static_cast<uint32_t>(h & 0x8000u) << 16;
+                uint32_t exp = (h >> 10) & 0x1Fu;
+                uint32_t mant = h & 0x3FFu;
+                uint32_t bits;
                 if (exp == 0) {
-                    f32 = (sign << 31) | (mant << 13);
+                    if (mant == 0) {
+                        bits = sign;
+                    } else {
+                        exp = 127 - 14;
+                        while ((mant & 0x400u) == 0) {
+                            mant <<= 1;
+                            --exp;
+                        }
+                        mant &= 0x3FFu;
+                        bits = sign | (exp << 23) | (mant << 13);
+                    }
                 } else if (exp == 31) {
-                    f32 = (sign << 31) | 0x7F800000 | (mant << 13);
+                    bits = sign | 0x7F800000u | (mant << 13);
                 } else {
-                    f32 = (sign << 31) | ((exp + 112) << 23) | (mant << 13);
+                    bits = sign | ((exp + 112) << 23) | (mant << 13);
                 }
-                float r;
-                std::memcpy(&r, &f32, sizeof(r));
-                return r;
+                float f;
+                std::memcpy(&f, &bits, sizeof(f));
+                return f;
             };
-            const float d = fp16(d_raw);
-            const int q0_lo = static_cast<int>((raw[2] & 0x0F) - 8);
-            std::cerr << "token_embd block0 (Q4_K_S=8xQ4_0): d=" << d << " d_raw=0x" << std::hex
-                      << d_raw << std::dec << " qs[0] lo nibble -> q-8=" << q0_lo
-                      << " expect[0]=d*(q-8)=" << (d * static_cast<float>(q0_lo)) << "\n";
-            std::cerr << "First 8 dequant outputs: ";
-            for (int i = 0; i < 8; ++i) {
-                std::cerr << out[i] << " ";
+
+            std::cerr << "token_embd block0 Q4_0 sub-blocks:\n";
+            for (int sb = 0; sb < 8; ++sb) {
+                const uint8_t* subblk = raw + sb * 18;
+                uint16_t d_raw;
+                std::memcpy(&d_raw, subblk, 2);
+                const float d = fp16_to_float(d_raw);
+                const uint8_t q0 = subblk[2];
+                const int lo = static_cast<int>((q0 & 0xF) - 8);
+                const int hi = static_cast<int>((q0 >> 4) - 8);
+                std::cerr << "  sb=" << sb << " d=" << d << " out[0]=" << (d * static_cast<float>(lo))
+                          << " out[1]=" << (d * static_cast<float>(hi)) << "\n";
             }
-            std::cerr << "\n";
         }
         break;
     }
@@ -176,42 +187,19 @@ std::vector<float> Model::dequant_tensor(const std::string& name)
     }
 
     if (name == "blk.0.attn_q.weight") {
-        const uint8_t* raw = static_cast<const uint8_t*>(t->data);
-        int first_nan_block = -1;
-        int first_nan_elem = -1;
-
+        std::cerr << "attn_q block0 first 8: ";
+        for (int i = 0; i < 8; ++i) {
+            std::cerr << out[i] << " ";
+        }
+        std::cerr << "\n";
+        float mn = 1e9f, mx = -1e9f;
         for (size_t i = 0; i < out.size(); ++i) {
-            if (std::isnan(out[i])) {
-                first_nan_block = static_cast<int>(i / 256);
-                first_nan_elem = static_cast<int>(i % 256);
-                break;
+            if (!std::isnan(out[i]) && !std::isinf(out[i])) {
+                mn = std::min(mn, out[i]);
+                mx = std::max(mx, out[i]);
             }
         }
-
-        if (first_nan_block >= 0) {
-            std::cerr << "First NaN: block=" << first_nan_block << " elem=" << first_nan_elem
-                      << "\n";
-
-            const uint8_t* blk = raw + first_nan_block * 110;
-
-            uint16_t d_raw;
-            std::memcpy(&d_raw, blk + 108, 2);
-            std::cerr << "d_raw=0x" << std::hex << d_raw << std::dec << "\n";
-
-            std::cerr << "Raw block bytes: ";
-            for (int i = 0; i < 110; ++i) {
-                std::cerr << std::hex << static_cast<int>(blk[i]) << " ";
-            }
-            std::cerr << std::dec << "\n";
-
-            int block_nans = 0;
-            for (int i = 0; i < 256; ++i) {
-                if (std::isnan(out[first_nan_block * 256 + i])) {
-                    ++block_nans;
-                }
-            }
-            std::cerr << "NaNs in this block: " << block_nans << "\n";
-        }
+        std::cerr << "attn_q range: min=" << mn << " max=" << mx << "\n";
     }
 
     return out;
