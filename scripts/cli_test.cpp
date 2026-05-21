@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
     llm::SamplerConfig scfg;
     scfg.temperature = 0.0f;
 
-    std::string prompt = "The capital of France is";
+    std::string prompt = llm::format_llama3_prompt("What is the capital of France?");
     std::cout << "\nPrompt: " << prompt << "\n";
     std::cout << "Response: " << std::flush;
 

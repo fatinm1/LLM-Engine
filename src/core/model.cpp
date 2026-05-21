@@ -14,6 +14,22 @@
 
 namespace llm {
 
+std::string format_llama3_prompt(
+    const std::string& user_message,
+    const std::string& system_message)
+{
+    std::string prompt;
+    prompt += "<|begin_of_text|>";
+    prompt += "<|start_header_id|>system<|end_header_id|>\n\n";
+    prompt += system_message;
+    prompt += "<|eot_id|>";
+    prompt += "<|start_header_id|>user<|end_header_id|>\n\n";
+    prompt += user_message;
+    prompt += "<|eot_id|>";
+    prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n";
+    return prompt;
+}
+
 std::unique_ptr<Model> Model::load(GGUFFile& gguf)
 {
     return std::unique_ptr<Model>(new Model(gguf));

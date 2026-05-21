@@ -299,8 +299,9 @@ void App::submit_prompt(const std::string& prompt)
 
     gen_thread_ = std::thread([this, prompt]() {
         try {
+            const std::string formatted = llm::format_llama3_prompt(prompt);
             model_->generate(
-                prompt, sampler_cfg_, 512,
+                formatted, sampler_cfg_, 512,
                 [this](llm::TokenID, const std::string& piece) -> bool {
                     {
                         std::lock_guard<std::mutex> lk(msg_mutex_);

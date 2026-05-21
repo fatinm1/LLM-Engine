@@ -26,6 +26,11 @@ struct ModelConfig {
 // Called after each generated token. Return false to stop generation.
 using TokenCallback = std::function<bool(TokenID, const std::string&)>;
 
+// Wraps a user message in the Llama 3 Instruct chat template.
+std::string format_llama3_prompt(
+    const std::string& user_message,
+    const std::string& system_message = "You are a helpful assistant.");
+
 class Model {
 public:
     // Load from a parsed GGUFFile. The GGUFFile must outlive the Model.
