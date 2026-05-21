@@ -217,6 +217,17 @@ Model::Model(GGUFFile& gguf) : gguf_(gguf)
     cfg_.head_dim = cfg_.embed_dim / cfg_.n_heads;
     cfg_.rope_theta = gguf.rope_theta();
 
+    const auto emb_scale_it = gguf_.metadata.find("llama.embedding_scale");
+    if (emb_scale_it != gguf_.metadata.end()) {
+        std::cerr << "Found llama.embedding_scale in metadata\n";
+    } else {
+        std::cerr << "No llama.embedding_scale in metadata\n";
+    }
+
+    const auto rope_it = gguf_.metadata.find("llama.rope.scale_linear");
+    std::cerr << "rope.scale_linear: "
+              << (rope_it != gguf_.metadata.end() ? "found" : "not found") << "\n";
+
     tokenizer_ = std::make_unique<Tokenizer>(gguf);
 
     token_embd_ = dequant_tensor("token_embd.weight");
@@ -479,6 +490,21 @@ const std::vector<float>& Model::forward(TokenID token, size_t pos)
 
     const float* emb = token_embd_.data() + static_cast<size_t>(token) * D;
     std::memcpy(x_.data(), emb, D * sizeof(float));
+
+    // Temporary: test embedding scale (Llama 3.2 often uses 1/sqrt(embed_dim))
+    const float emb_scale = 1.0f / std::sqrt(static_cast<float>(cfg_.embed_dim));
+    for (size_t i = 0; i < cfg_.embed_dim; ++i) {
+        x_[i] *= emb_scale;
+    }
+
+    if (pos == 0) {
+        float mag = 0.f;
+        for (size_t i = 0; i < cfg_.embed_dim; ++i) {
+            mag += x_[i] * x_[i];
+        }
+        mag = std::sqrt(mag / cfg_.embed_dim);
+        std::cerr << "After emb scale: x_ mag=" << mag << "\n";
+    }
 
     if (pos == 0) {
         float mn = 1e9f, mx = -1e9f;
