@@ -141,35 +141,41 @@ std::vector<float> Model::dequant_tensor(const std::string& name)
     }
 
     if (name == "blk.0.attn_q.weight") {
-        int nan_count = 0;
-        int first_nan_idx = -1;
+        const uint8_t* raw = static_cast<const uint8_t*>(t->data);
+        int first_nan_block = -1;
+        int first_nan_elem = -1;
+
         for (size_t i = 0; i < out.size(); ++i) {
             if (std::isnan(out[i])) {
-                ++nan_count;
-                if (first_nan_idx < 0) {
-                    first_nan_idx = static_cast<int>(i);
-                }
+                first_nan_block = static_cast<int>(i / 256);
+                first_nan_elem = static_cast<int>(i % 256);
+                break;
             }
         }
-        std::cerr << "After dequant: nan_count=" << nan_count << " first_nan_at=" << first_nan_idx
-                  << "\n";
-        if (first_nan_idx >= 0) {
-            const int block_idx = first_nan_idx / 256;
-            const int elem_idx = first_nan_idx % 256;
-            std::cerr << "First NaN: block=" << block_idx << " elem=" << elem_idx << "\n";
 
-            const uint8_t* raw = static_cast<const uint8_t*>(t->data);
-            const uint8_t* blk = raw + block_idx * 110;
-            std::cerr << "Raw block " << block_idx << " bytes[96..109] (scales+d): ";
-            for (int i = 96; i < 110; ++i) {
+        if (first_nan_block >= 0) {
+            std::cerr << "First NaN: block=" << first_nan_block << " elem=" << first_nan_elem
+                      << "\n";
+
+            const uint8_t* blk = raw + first_nan_block * 110;
+
+            uint16_t d_raw;
+            std::memcpy(&d_raw, blk + 108, 2);
+            std::cerr << "d_raw=0x" << std::hex << d_raw << std::dec << "\n";
+
+            std::cerr << "Raw block bytes: ";
+            for (int i = 0; i < 110; ++i) {
                 std::cerr << std::hex << static_cast<int>(blk[i]) << " ";
             }
             std::cerr << std::dec << "\n";
 
-            uint16_t d_blk;
-            std::memcpy(&d_blk, blk + 108, 2);
-            std::cerr << "Block " << block_idx << " d_raw=0x" << std::hex << d_blk << std::dec
-                      << "\n";
+            int block_nans = 0;
+            for (int i = 0; i < 256; ++i) {
+                if (std::isnan(out[first_nan_block * 256 + i])) {
+                    ++block_nans;
+                }
+            }
+            std::cerr << "NaNs in this block: " << block_nans << "\n";
         }
     }
 
@@ -222,6 +228,38 @@ Model::Model(GGUFFile& gguf) : gguf_(gguf)
         layer_w_down_[L] = dequant_tensor(p + "ffn_down.weight");
     }
 
+    {
+        int nans = 0, zeros = 0;
+        float mn = 1e9f, mx = -1e9f;
+        for (float v : output_proj_) {
+            if (std::isnan(v)) {
+                ++nans;
+            } else if (v == 0.f) {
+                ++zeros;
+            } else {
+                mn = std::min(mn, v);
+                mx = std::max(mx, v);
+            }
+        }
+        std::cerr << "output_proj_: size=" << output_proj_.size() << " nan=" << nans << " zeros=" << zeros
+                  << " min=" << mn << " max=" << mx << "\n";
+    }
+
+    {
+        int nans = 0;
+        float mn = 1e9f, mx = -1e9f;
+        for (float v : output_norm_) {
+            if (std::isnan(v)) {
+                ++nans;
+            } else {
+                mn = std::min(mn, v);
+                mx = std::max(mx, v);
+            }
+        }
+        std::cerr << "output_norm_: size=" << output_norm_.size() << " nan=" << nans << " min=" << mn
+                  << " max=" << mx << "\n";
+    }
+
     auto print_layer0_stats = [](const std::vector<float>& w, const char* label) {
         int nan_count = 0, inf_count = 0, zero_count = 0;
         float min_val = std::numeric_limits<float>::max();
@@ -242,6 +280,18 @@ Model::Model(GGUFFile& gguf) : gguf_(gguf)
         std::cerr << label << " stats: size=" << w.size() << " nan=" << nan_count << " inf=" << inf_count
                   << " zeros=" << zero_count << " min=" << min_val << " max=" << max_val << "\n";
     };
+    {
+        int exact_zeros = 0;
+        for (float v : layer_wq_[0]) {
+            if (v == 0.0f) {
+                ++exact_zeros;
+            }
+        }
+        std::cerr << "layer_wq_[0] exact zeros: " << exact_zeros << " / " << layer_wq_[0].size()
+                  << " (" << 100.0f * static_cast<float>(exact_zeros) /
+                             static_cast<float>(layer_wq_[0].size())
+                  << "%)\n";
+    }
     print_layer0_stats(layer_wq_[0], "layer_wq_[0]");
     print_layer0_stats(layer_wk_[0], "layer_wk_[0]");
     print_layer0_stats(layer_attn_norm_[0], "layer_attn_norm_[0]");
@@ -415,6 +465,16 @@ const std::vector<float>& Model::forward(TokenID token, size_t pos)
     }
 
     simd::rms_norm(x_.data(), output_norm_.data(), x_norm_.data(), D);
+
+    {
+        float mag = 0.f;
+        for (size_t i = 0; i < cfg_.embed_dim; ++i) {
+            mag += x_norm_[i] * x_norm_[i];
+        }
+        mag = std::sqrt(mag / cfg_.embed_dim);
+        std::cerr << "x_norm_ magnitude before output proj: " << mag << "\n";
+    }
+
     simd::matvec(output_proj_.data(), x_norm_.data(), logits_.data(), cfg_.vocab_size, D);
 
     int nan_count = 0, inf_count = 0;

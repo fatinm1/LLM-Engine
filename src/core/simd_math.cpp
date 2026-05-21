@@ -261,8 +261,11 @@ void dequant_q8_0(const void* src, float* out, size_t n_blocks)
     size_t out_idx = 0;
     for (size_t b = 0; b < n_blocks; ++b) {
         const uint8_t* block = blocks + b * 34;
-        const float d = fp16_to_fp32(static_cast<uint16_t>(block[0]) |
-                                     (static_cast<uint16_t>(block[1]) << 8));
+        float d = fp16_to_fp32(static_cast<uint16_t>(block[0]) |
+                               (static_cast<uint16_t>(block[1]) << 8));
+        if (!std::isfinite(d)) {
+            d = 0.0f;
+        }
         for (int i = 0; i < 32; ++i) {
             const int8_t q = static_cast<int8_t>(block[2 + i]);
             out[out_idx++] = static_cast<float>(q) * d;
@@ -282,7 +285,10 @@ void dequant_q3_k_m(const void* src, float* out, size_t n_blocks)
     for (size_t b = 0; b < n_blocks; ++b) {
         const uint8_t* block = blocks + b * 110;
 
-        const float d_all = fp16_to_fp32(*reinterpret_cast<const uint16_t*>(block + 108));
+        float d_all = fp16_to_fp32(*reinterpret_cast<const uint16_t*>(block + 108));
+        if (!std::isfinite(d_all)) {
+            d_all = 0.0f;
+        }
 
         const uint8_t* q = block + 32;
         const uint8_t* hm = block + 0;
@@ -329,10 +335,16 @@ void dequant_q4_k_m(const void* src, float* out, size_t n_blocks)
 
     for (size_t b = 0; b < n_blocks; ++b) {
         const uint8_t* block = blocks + b * 144;
-        const float d = fp16_to_fp32(static_cast<uint16_t>(block[0]) |
-                                     (static_cast<uint16_t>(block[1]) << 8));
-        const float dmin = fp16_to_fp32(static_cast<uint16_t>(block[2]) |
-                                        (static_cast<uint16_t>(block[3]) << 8));
+        float d = fp16_to_fp32(static_cast<uint16_t>(block[0]) |
+                               (static_cast<uint16_t>(block[1]) << 8));
+        float dmin = fp16_to_fp32(static_cast<uint16_t>(block[2]) |
+                                  (static_cast<uint16_t>(block[3]) << 8));
+        if (!std::isfinite(d)) {
+            d = 0.0f;
+        }
+        if (!std::isfinite(dmin)) {
+            dmin = 0.0f;
+        }
 
         uint8_t scales[12];
         std::memcpy(scales, block + 4, 12);
