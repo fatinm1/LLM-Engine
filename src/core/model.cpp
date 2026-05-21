@@ -267,7 +267,8 @@ std::string Model::generate(const std::string& prompt,
                             TokenCallback callback)
 {
     Sampler sampler(sampler_cfg);
-    std::vector<TokenID> context = tokenizer_->encode(prompt, true);
+    const bool has_begin_of_text = prompt.find("<|begin_of_text|>") != std::string::npos;
+    std::vector<TokenID> context = tokenizer_->encode(prompt, !has_begin_of_text);
 
     if (context.empty()) {
         throw std::runtime_error("Model::generate: empty token sequence");

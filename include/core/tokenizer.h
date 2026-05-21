@@ -32,7 +32,9 @@ private:
     std::array<TokenID, 256> byte_tokens_{};
     TokenID bos_id_ = TOKEN_BOS;
     TokenID eos_id_ = TOKEN_EOS;
+    std::vector<std::string> special_tokens_;
 
+    std::vector<TokenID> encode_chunk(const std::string& text) const;
     static std::vector<std::string> utf8_chars(const std::string& text);
     static std::string normalize_text(const std::string& text);
 };

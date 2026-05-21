@@ -180,6 +180,15 @@ Tokenizer::Tokenizer(const GGUFFile& gguf)
             }
         }
     }
+
+    for (size_t i = 0; i < vocab_.size(); ++i) {
+        const std::string& tok = vocab_[i];
+        if (i >= 128000 || (tok.size() >= 2 && tok[0] == '<' && tok[1] == '|')) {
+            special_tokens_.push_back(tok);
+        }
+    }
+    std::sort(special_tokens_.begin(), special_tokens_.end(),
+              [](const std::string& a, const std::string& b) { return a.size() > b.size(); });
 }
 
 std::vector<std::string> Tokenizer::utf8_chars(const std::string& text)
@@ -207,12 +216,18 @@ std::vector<std::string> Tokenizer::utf8_chars(const std::string& text)
 
 TokenID Tokenizer::bos_id() const { return bos_id_; }
 TokenID Tokenizer::eos_id() const { return eos_id_; }
-bool Tokenizer::is_eos(TokenID id) const { return id == eos_id_; }
+bool Tokenizer::is_eos(TokenID id) const
+{
+    return id == eos_id_ || id == 128001 || id == 128008 || id == 128009;
+}
 size_t Tokenizer::vocab_size() const { return vocab_.size(); }
 
 std::string Tokenizer::decode_token(TokenID id) const
 {
     if (id < 0 || static_cast<size_t>(id) >= vocab_.size()) {
+        return "";
+    }
+    if (id >= 128000) {
         return "";
     }
     std::string text = vocab_[static_cast<size_t>(id)];
@@ -223,12 +238,9 @@ std::string Tokenizer::decode_token(TokenID id) const
     return text;
 }
 
-std::vector<TokenID> Tokenizer::encode(const std::string& text, bool add_bos) const
+std::vector<TokenID> Tokenizer::encode_chunk(const std::string& text) const
 {
     std::vector<TokenID> result;
-    if (add_bos) {
-        result.push_back(bos_id_);
-    }
     if (text.empty()) {
         return result;
     }
@@ -305,6 +317,52 @@ std::vector<TokenID> Tokenizer::encode(const std::string& text, bool add_bos) co
     return result;
 }
 
+std::vector<TokenID> Tokenizer::encode(const std::string& text, bool add_bos) const
+{
+    std::vector<TokenID> result;
+    const bool has_begin_of_text = text.find("<|begin_of_text|>") != std::string::npos;
+    if (add_bos && !has_begin_of_text) {
+        result.push_back(bos_id_);
+    }
+    if (text.empty()) {
+        return result;
+    }
+
+    const std::string normalized = normalize_text(text);
+    size_t pos = 0;
+    while (pos < normalized.size()) {
+        bool matched_special = false;
+        for (const std::string& special : special_tokens_) {
+            if (normalized.compare(pos, special.size(), special) == 0) {
+                result.push_back(token_to_id_.at(special));
+                pos += special.size();
+                matched_special = true;
+                break;
+            }
+        }
+        if (matched_special) {
+            continue;
+        }
+
+        size_t next_special = normalized.find("<|", pos);
+        if (next_special == std::string::npos) {
+            next_special = normalized.size();
+        }
+        if (next_special > pos) {
+            const std::vector<TokenID> chunk_ids =
+                encode_chunk(normalized.substr(pos, next_special - pos));
+            result.insert(result.end(), chunk_ids.begin(), chunk_ids.end());
+            pos = next_special;
+            continue;
+        }
+
+        const std::vector<TokenID> chunk_ids = encode_chunk(normalized.substr(pos));
+        result.insert(result.end(), chunk_ids.begin(), chunk_ids.end());
+        break;
+    }
+    return result;
+}
+
 std::string Tokenizer::decode(const std::vector<TokenID>& ids) const
 {
     std::string out;
@@ -312,7 +370,7 @@ std::string Tokenizer::decode(const std::vector<TokenID>& ids) const
         if (id == bos_id_) {
             continue;
         }
-        if (id == eos_id_) {
+        if (is_eos(id)) {
             break;
         }
         out += decode_token(id);
