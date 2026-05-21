@@ -9,11 +9,7 @@ A C++ desktop application that runs local LLM inference entirely on CPU — no i
 ## Screenshots
 
 ### Desktop Chat UI — Llama 3.2 running locally at 4.1 tok/s
-
-> **Sharp on GitHub:** The image must be **~2560px wide** (Retina 2×). Chat uploads are compressed to 1024px and will look blurry. With `llm_desktop` open: **⌘⇧4** → **Space** → click the window → save as `docs/screenshots/desktop-chat.png`. Or run `bash scripts/capture_desktop_screenshot.sh` (grant Screen Recording to Terminal).
-
-<!-- After a ~2560px Retina capture, set width="1280". For 1024px files use width="512". -->
-<img src="docs/screenshots/desktop-chat.png" width="512" alt="LLM Engine desktop chat window">
+![LLM Engine desktop chat window](docs/screenshots/desktop-chat.png)
 
 ### Landing Page
 ![LLM Engine landing page](docs/screenshots/hero.png)
