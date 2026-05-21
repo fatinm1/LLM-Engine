@@ -33,148 +33,18 @@ std::vector<float> Model::dequant_tensor(const std::string& name)
 
     std::vector<float> out(n_elems);
 
-    if (name == "blk.0.attn_q.weight") {
-        const uint8_t* raw = static_cast<const uint8_t*>(t->data);
-        std::cerr << "blk.0.attn_q.weight type=" << static_cast<uint32_t>(t->type)
-                  << " n_elems=" << n_elems << " n_bytes=" << t->n_bytes << "\n";
-        std::cerr << "First 16 raw bytes: ";
-        for (int i = 0; i < 16; ++i) {
-            std::cerr << std::hex << static_cast<int>(raw[i]) << " ";
-        }
-        std::cerr << std::dec << "\n";
-
-        uint16_t d_raw;
-        std::memcpy(&d_raw, raw + 108, 2);
-        std::cerr << "d_raw (fp16) = 0x" << std::hex << d_raw << std::dec << "\n";
-
-        std::cerr << "expected blocks=" << (n_elems / 256)
-                  << " actual bytes/110=" << (t->n_bytes / 110) << "\n";
-
-        const uint8_t* scales = raw + 96;
-        uint16_t d_val;
-        std::memcpy(&d_val, raw + 108, 2);
-        auto fp16_to_float = [](uint16_t h) -> float {
-            const uint32_t sign = static_cast<uint32_t>(h & 0x8000u) << 16;
-            uint32_t exp = (h >> 10) & 0x1Fu;
-            uint32_t mant = h & 0x3FFu;
-            uint32_t bits;
-            if (exp == 0) {
-                if (mant == 0) {
-                    bits = sign;
-                } else {
-                    exp = 127 - 14;
-                    while ((mant & 0x400u) == 0) {
-                        mant <<= 1;
-                        --exp;
-                    }
-                    mant &= 0x3FFu;
-                    bits = sign | (exp << 23) | (mant << 13);
-                }
-            } else if (exp == 31) {
-                bits = sign | 0x7F800000u | (mant << 13);
-            } else {
-                bits = sign | ((exp + 112) << 23) | (mant << 13);
-            }
-            float f;
-            std::memcpy(&f, &bits, sizeof(f));
-            return f;
-        };
-        const float d_f = fp16_to_float(d_val);
-
-        int8_t sc[16];
-        sc[0] = static_cast<int8_t>((scales[0] & 0xF) | ((scales[8] & 0x03) << 4));
-        sc[1] = static_cast<int8_t>((scales[0] >> 4) | ((scales[8] & 0x0C) << 2));
-        sc[2] = static_cast<int8_t>((scales[1] & 0xF) | ((scales[9] & 0x03) << 4));
-        sc[3] = static_cast<int8_t>((scales[1] >> 4) | ((scales[9] & 0x0C) << 2));
-        sc[4] = static_cast<int8_t>((scales[2] & 0xF) | ((scales[10] & 0x03) << 4));
-        sc[5] = static_cast<int8_t>((scales[2] >> 4) | ((scales[10] & 0x0C) << 2));
-        sc[6] = static_cast<int8_t>((scales[3] & 0xF) | ((scales[11] & 0x03) << 4));
-        sc[7] = static_cast<int8_t>((scales[3] >> 4) | ((scales[11] & 0x0C) << 2));
-        sc[8] = static_cast<int8_t>((scales[4] & 0xF) | ((scales[8] & 0x30) >> 0));
-        sc[9] = static_cast<int8_t>((scales[4] >> 4) | ((scales[9] & 0x30) >> 0));
-        sc[10] = static_cast<int8_t>((scales[5] & 0xF) | ((scales[10] & 0x30) >> 0));
-        sc[11] = static_cast<int8_t>((scales[5] >> 4) | ((scales[11] & 0x30) >> 0));
-        sc[12] = static_cast<int8_t>((scales[6] & 0xF) | ((scales[8] & 0xC0) >> 2));
-        sc[13] = static_cast<int8_t>((scales[6] >> 4) | ((scales[9] & 0xC0) >> 2));
-        sc[14] = static_cast<int8_t>((scales[7] & 0xF) | ((scales[10] & 0xC0) >> 2));
-        sc[15] = static_cast<int8_t>((scales[7] >> 4) | ((scales[11] & 0xC0) >> 2));
-
-        std::cerr << "d=" << d_f << " scales: ";
-        for (int i = 0; i < 16; ++i) {
-            const float scale_val = d_f * static_cast<float>(sc[i] - 32);
-            std::cerr << "[" << i << "]sc=" << static_cast<int>(sc[i]) << " s-32="
-                      << static_cast<int>(sc[i] - 32) << " scaled=" << scale_val
-                      << (std::isnan(scale_val) ? " NAN!" : "") << " | ";
-        }
-        std::cerr << "\n";
-
-        std::cerr << "raw scales[0..11]: ";
-        for (int i = 0; i < 12; ++i) {
-            std::cerr << std::hex << static_cast<int>(scales[i]) << " ";
-        }
-        std::cerr << std::dec << "\n";
-    }
-
     switch (t->type) {
     case GGMLType::F32:
         std::memcpy(out.data(), t->data, n_elems * sizeof(float));
         break;
-    case GGMLType::Q3_K_M:
-    case GGMLType::Q3_K_L: {
+    case GGMLType::Q4_K: {
         size_t n_blocks = n_elems / 256;
-        simd::dequant_q3_k_m(t->data, out.data(), n_blocks);
+        simd::dequant_q4_k(t->data, out.data(), n_blocks);
         break;
     }
-    case GGMLType::Q4_K_S: {
+    case GGMLType::Q6_K: {
         size_t n_blocks = n_elems / 256;
-        simd::dequant_q4_k_s(t->data, out.data(), n_blocks);
-        if (name == "token_embd.weight") {
-            const uint8_t* raw = static_cast<const uint8_t*>(t->data);
-            auto fp16_to_float = [](uint16_t h) -> float {
-                const uint32_t sign = static_cast<uint32_t>(h & 0x8000u) << 16;
-                uint32_t exp = (h >> 10) & 0x1Fu;
-                uint32_t mant = h & 0x3FFu;
-                uint32_t bits;
-                if (exp == 0) {
-                    if (mant == 0) {
-                        bits = sign;
-                    } else {
-                        exp = 127 - 14;
-                        while ((mant & 0x400u) == 0) {
-                            mant <<= 1;
-                            --exp;
-                        }
-                        mant &= 0x3FFu;
-                        bits = sign | (exp << 23) | (mant << 13);
-                    }
-                } else if (exp == 31) {
-                    bits = sign | 0x7F800000u | (mant << 13);
-                } else {
-                    bits = sign | ((exp + 112) << 23) | (mant << 13);
-                }
-                float f;
-                std::memcpy(&f, &bits, sizeof(f));
-                return f;
-            };
-
-            std::cerr << "token_embd block0 Q4_0 sub-blocks:\n";
-            for (int sb = 0; sb < 8; ++sb) {
-                const uint8_t* subblk = raw + sb * 18;
-                uint16_t d_raw;
-                std::memcpy(&d_raw, subblk, 2);
-                const float d = fp16_to_float(d_raw);
-                const uint8_t q0 = subblk[2];
-                const int lo = static_cast<int>((q0 & 0xF) - 8);
-                const int hi = static_cast<int>((q0 >> 4) - 8);
-                std::cerr << "  sb=" << sb << " d=" << d << " out[0]=" << (d * static_cast<float>(lo))
-                          << " out[1]=" << (d * static_cast<float>(hi)) << "\n";
-            }
-        }
-        break;
-    }
-    case GGMLType::Q4_K_M: {
-        size_t n_blocks = n_elems / 256;
-        simd::dequant_q4_k_m(t->data, out.data(), n_blocks);
+        simd::dequant_q6_k(t->data, out.data(), n_blocks);
         break;
     }
     case GGMLType::Q8_0: {
@@ -184,22 +54,6 @@ std::vector<float> Model::dequant_tensor(const std::string& name)
     }
     default:
         throw std::runtime_error("Model: unsupported quant type for tensor: " + name);
-    }
-
-    if (name == "blk.0.attn_q.weight") {
-        std::cerr << "attn_q block0 first 8: ";
-        for (int i = 0; i < 8; ++i) {
-            std::cerr << out[i] << " ";
-        }
-        std::cerr << "\n";
-        float mn = 1e9f, mx = -1e9f;
-        for (size_t i = 0; i < out.size(); ++i) {
-            if (!std::isnan(out[i]) && !std::isinf(out[i])) {
-                mn = std::min(mn, out[i]);
-                mx = std::max(mx, out[i]);
-            }
-        }
-        std::cerr << "attn_q range: min=" << mn << " max=" << mx << "\n";
     }
 
     return out;
@@ -490,21 +344,6 @@ const std::vector<float>& Model::forward(TokenID token, size_t pos)
 
     const float* emb = token_embd_.data() + static_cast<size_t>(token) * D;
     std::memcpy(x_.data(), emb, D * sizeof(float));
-
-    // Temporary: test embedding scale (Llama 3.2 often uses 1/sqrt(embed_dim))
-    const float emb_scale = 1.0f / std::sqrt(static_cast<float>(cfg_.embed_dim));
-    for (size_t i = 0; i < cfg_.embed_dim; ++i) {
-        x_[i] *= emb_scale;
-    }
-
-    if (pos == 0) {
-        float mag = 0.f;
-        for (size_t i = 0; i < cfg_.embed_dim; ++i) {
-            mag += x_[i] * x_[i];
-        }
-        mag = std::sqrt(mag / cfg_.embed_dim);
-        std::cerr << "After emb scale: x_ mag=" << mag << "\n";
-    }
 
     if (pos == 0) {
         float mn = 1e9f, mx = -1e9f;

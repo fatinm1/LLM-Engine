@@ -273,63 +273,7 @@ void dequant_q8_0(const void* src, float* out, size_t n_blocks)
     }
 }
 
-void dequant_q3_k_m(const void* src, float* out, size_t n_blocks)
-{
-    // ggml/src/ggml-quants.c dequantize_row_q3_K — block_q3_K layout:
-    // hmask[0..31], qs[32..95], scales[96..107], d fp16[108..109]
-    const uint32_t kmask1 = 0x03030303;
-    const uint32_t kmask2 = 0x0f0f0f0f;
-
-    const auto* blocks = static_cast<const uint8_t*>(src);
-    float* y = out;
-
-    for (size_t i = 0; i < n_blocks; ++i) {
-        const uint8_t* block = blocks + i * 110;
-
-        float d_all = fp16_to_fp32(*reinterpret_cast<const uint16_t*>(block + 108));
-        if (!std::isfinite(d_all)) {
-            d_all = 0.0f;
-        }
-
-        const uint8_t* q = block + 32;
-        const uint8_t* hm = block + 0;
-        uint8_t m = 1;
-
-        uint32_t aux[4];
-        const int8_t* scales = reinterpret_cast<const int8_t*>(aux);
-        std::memcpy(aux, block + 96, 12);
-        const uint32_t tmp = aux[2];
-        aux[2] = ((aux[0] >> 4) & kmask2) | (((tmp >> 4) & kmask1) << 4);
-        aux[3] = ((aux[1] >> 4) & kmask2) | (((tmp >> 6) & kmask1) << 4);
-        aux[0] = (aux[0] & kmask2) | (((tmp >> 0) & kmask1) << 4);
-        aux[1] = (aux[1] & kmask2) | (((tmp >> 2) & kmask1) << 4);
-
-        int is = 0;
-        float dl;
-        for (int n = 0; n < 256; n += 128) {
-            int shift = 0;
-            for (int j = 0; j < 4; ++j) {
-                dl = d_all * static_cast<float>(scales[is++] - 32);
-                for (int l = 0; l < 16; ++l) {
-                    *y++ = dl * static_cast<float>(
-                        static_cast<int8_t>(((q[l + 0] >> shift) & 3) - ((hm[l + 0] & m) ? 0 : 4)));
-                }
-
-                dl = d_all * static_cast<float>(scales[is++] - 32);
-                for (int l = 0; l < 16; ++l) {
-                    *y++ = dl * static_cast<float>(
-                        static_cast<int8_t>(((q[l + 16] >> shift) & 3) - ((hm[l + 16] & m) ? 0 : 4)));
-                }
-
-                shift += 2;
-                m <<= 1;
-            }
-            q += 32;
-        }
-    }
-}
-
-// ggml/src/ggml-quants.c — get_scale_min_k4 + dequantize_row_q4_K (Q4_K_S / Q4_K_M block layout)
+// ggml/src/ggml-quants.c — get_scale_min_k4 + dequantize_row_q4_K
 static inline void get_scale_min_k4(int j, const uint8_t* q, uint8_t* d, uint8_t* m)
 {
     if (j < 4) {
@@ -341,7 +285,7 @@ static inline void get_scale_min_k4(int j, const uint8_t* q, uint8_t* d, uint8_t
     }
 }
 
-static void dequant_q4_k_impl(const void* src, float* out, size_t n_blocks)
+void dequant_q4_k(const void* src, float* out, size_t n_blocks)
 {
     const auto* blocks = static_cast<const uint8_t*>(src);
     float* y = out;
@@ -382,15 +326,46 @@ static void dequant_q4_k_impl(const void* src, float* out, size_t n_blocks)
     }
 }
 
-void dequant_q4_k_m(const void* src, float* out, size_t n_blocks)
+void dequant_q6_k(const void* src, float* out, size_t n_blocks)
 {
-    dequant_q4_k_impl(src, out, n_blocks);
-}
+    // ggml/src/ggml-quants.c dequantize_row_q6_K — block_q6_K (210 bytes):
+    // ql[0..127], qh[128..191], scales[192..207], d fp16[208..209]
+    const auto* blocks = static_cast<const uint8_t*>(src);
+    float* y = out;
 
-void dequant_q4_k_s(const void* src, float* out, size_t n_blocks)
-{
-    // Q4_K_S uses block_q4_K (144 bytes), same as dequantize_row_q4_K in llama.cpp
-    dequant_q4_k_impl(src, out, n_blocks);
+    for (size_t i = 0; i < n_blocks; ++i) {
+        const uint8_t* block = blocks + i * 210;
+
+        float d = fp16_to_fp32(*reinterpret_cast<const uint16_t*>(block + 208));
+        if (!std::isfinite(d)) {
+            d = 0.0f;
+        }
+
+        const uint8_t* ql = block + 0;
+        const uint8_t* qh = block + 128;
+        const int8_t* sc = reinterpret_cast<const int8_t*>(block + 192);
+
+        for (int n = 0; n < 256; n += 128) {
+            for (int l = 0; l < 32; ++l) {
+                const int is = l / 16;
+                const int8_t q1 = static_cast<int8_t>(((ql[l + 0] & 0xF) | (((qh[l] >> 0) & 3) << 4)) - 32);
+                const int8_t q2 =
+                    static_cast<int8_t>(((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32);
+                const int8_t q3 =
+                    static_cast<int8_t>(((ql[l + 0] >> 4) | (((qh[l] >> 4) & 3) << 4)) - 32);
+                const int8_t q4 =
+                    static_cast<int8_t>(((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)) - 32);
+                y[l + 0] = d * static_cast<float>(sc[is + 0]) * static_cast<float>(q1);
+                y[l + 32] = d * static_cast<float>(sc[is + 2]) * static_cast<float>(q2);
+                y[l + 64] = d * static_cast<float>(sc[is + 4]) * static_cast<float>(q3);
+                y[l + 96] = d * static_cast<float>(sc[is + 6]) * static_cast<float>(q4);
+            }
+            y += 128;
+            ql += 64;
+            qh += 32;
+            sc += 8;
+        }
+    }
 }
 
 }  // namespace llm::simd
