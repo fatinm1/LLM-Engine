@@ -9,7 +9,8 @@ A C++ desktop application that runs local LLM inference entirely on CPU — no i
 ## Screenshots
 
 ### Desktop Chat UI — Llama 3.2 running locally at 4.1 tok/s
-![LLM Engine desktop chat window](docs/screenshots/desktop-chat.png)
+<!-- 1024px capture shown at 512px CSS width = sharp on Retina (2x density) -->
+<img src="docs/screenshots/desktop-chat.png" width="512" alt="LLM Engine desktop chat window">
 
 ### Landing Page
 ![LLM Engine landing page](docs/screenshots/hero.png)
