@@ -39,6 +39,7 @@ add_library(llm_core STATIC
     src/core/kv_cache.cpp
     src/core/sampler.cpp
     src/core/model.cpp
+    src/core/thread_pool.cpp
 )
 target_include_directories(llm_core PUBLIC
     ${CMAKE_SOURCE_DIR}/include
