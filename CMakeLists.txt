@@ -49,6 +49,7 @@ find_package(OpenGL REQUIRED)
 
 add_executable(llm_desktop
     src/ui/main.cpp
+    src/ui/app.cpp
     ${IMGUI_SOURCES}
 )
 target_include_directories(llm_desktop PRIVATE
