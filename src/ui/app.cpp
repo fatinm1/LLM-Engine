@@ -252,6 +252,13 @@ void App::render_status_bar()
     }
 }
 
+void App::auto_load(const std::string& path)
+{
+    std::strncpy(path_buf_, path.c_str(), sizeof(path_buf_) - 1);
+    path_buf_[sizeof(path_buf_) - 1] = '\0';
+    load_model(path);
+}
+
 void App::load_model(const std::string& path)
 {
     if (state_ == AppState::LOADING || state_ == AppState::GENERATING) {

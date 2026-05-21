@@ -4,13 +4,14 @@
 #include "backends/imgui_impl_opengl3.h"
 #include <GLFW/glfw3.h>
 #include <cstdio>
+#include <filesystem>
 
 static void glfw_error_callback(int error, const char* description)
 {
     fprintf(stderr, "GLFW error %d: %s\n", error, description);
 }
 
-int main(int /*argc*/, char** /*argv*/)
+int main(int argc, char** argv)
 {
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit()) {
@@ -52,6 +53,16 @@ int main(int /*argc*/, char** /*argv*/)
     ImGui_ImplOpenGL3_Init("#version 330");
 
     llm::ui::App app;
+
+    if (argc > 0 && argv[0] != nullptr) {
+        const std::filesystem::path exe_path = argv[0];
+        const std::filesystem::path bundle_model =
+            exe_path.parent_path().parent_path() / "Resources" / "models" /
+            "Llama-3.2-1B-Instruct-Q4_K_M.gguf";
+        if (std::filesystem::exists(bundle_model)) {
+            app.auto_load(bundle_model.string());
+        }
+    }
 
     while (!glfwWindowShouldClose(window) && !app.should_quit()) {
         glfwPollEvents();

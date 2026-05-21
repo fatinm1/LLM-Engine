@@ -36,6 +36,8 @@ public:
 
     bool should_quit() const { return quit_; }
 
+    void auto_load(const std::string& path);
+
 private:
     void render_menu_bar();
     void render_sidebar();

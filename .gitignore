@@ -1,4 +1,5 @@
 build/
+build-release/
 models/*.gguf
 imgui.ini
 docs/.DS_Store

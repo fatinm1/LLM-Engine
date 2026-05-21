@@ -68,7 +68,20 @@ if(APPLE)
         "-framework Cocoa"
         "-framework CoreVideo"
     )
+    set_target_properties(llm_desktop PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "LLM Engine"
+        MACOSX_BUNDLE_BUNDLE_VERSION "1.0.0"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "dev.fatin.llm-engine"
+        MACOSX_BUNDLE_COPYRIGHT "© 2025 Fatin Mojumder"
+        OUTPUT_NAME "LLM Engine"
+    )
 endif()
 
 enable_testing()
 add_subdirectory(tests)
+
+if(APPLE)
+    include(cmake/MacOSBundle.cmake)
+endif()
