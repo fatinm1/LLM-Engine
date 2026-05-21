@@ -362,10 +362,20 @@
       </p>
 
       <div class="flex flex-col sm:flex-row items-center justify-center gap-4" data-aos="fade-up" data-aos-delay="300">
-        <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 px-8 py-4 rounded-full bg-stone-900 hover:bg-stone-800 text-white text-sm font-semibold transition shadow-xl shadow-stone-900/20">
-          Clone &amp; Build
-          <i class="ph ph-arrow-right text-base"></i>
-        </a>
+        <div class="flex flex-col items-center">
+          <a href="https://github.com/fatinm1/LLM-Engine/releases/download/v1.0.0/LLM-Engine.dmg"
+             class="bg-stone-900 text-white px-8 py-4 rounded-full text-base
+                    font-medium hover:bg-stone-800 transition shadow-lg
+                    hover:shadow-xl hover:-translate-y-1 transform duration-300
+                    flex items-center gap-2 group">
+            <i class="ph-bold ph-apple-logo"></i>
+            Download for Mac
+            <i class="ph-bold ph-arrow-right group-hover:translate-x-1 transition-transform"></i>
+          </a>
+          <p class="text-xs text-stone-400 mt-2">
+            767 MB · macOS 12+ · Apple Silicon · Llama 3.2 included
+          </p>
+        </div>
         <a href="#architecture" class="inline-flex items-center gap-2 px-8 py-4 rounded-full glass-card hover:bg-white/60 text-stone-900 text-sm font-semibold transition">
           How it works
         </a>
@@ -953,14 +963,24 @@ out  = w_down @ (<span class="text-blue-400">silu</span>(gate) * up)
         <p class="text-lg sm:text-xl text-stone-400 mb-10 max-w-2xl mx-auto leading-relaxed">
           Your data never leaves your computer. No telemetry, no accounts, no subscriptions. Clone the repo, download a model, and start chatting.
         </p>
-        <div class="flex flex-col sm:flex-row justify-center gap-4">
-          <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" class="bg-white text-stone-900 px-8 py-4 rounded-full flex items-center justify-center gap-3 hover:bg-violet-100 transition shadow-lg hover:scale-105 font-bold">
-            Clone on GitHub
-            <i class="ph ph-arrow-right"></i>
+        <div class="flex flex-col items-center gap-4">
+          <a href="https://github.com/fatinm1/LLM-Engine/releases/download/v1.0.0/LLM-Engine.dmg"
+             class="bg-violet-600 text-white px-8 py-4 rounded-full
+                    flex items-center justify-center gap-3
+                    hover:bg-violet-500 transition shadow-lg
+                    hover:scale-105 font-bold text-lg">
+            <i class="ph-bold ph-apple-logo"></i>
+            Download for Mac — Free
           </a>
-          <a href="https://github.com/fatinm1/LLM-Engine/blob/main/README.md" target="_blank" rel="noopener noreferrer" class="text-white border border-stone-600 px-8 py-4 rounded-full font-medium hover:bg-white/10 transition">
-            Read the README
-          </a>
+          <div class="flex flex-col sm:flex-row justify-center gap-4">
+            <a href="https://github.com/fatinm1/LLM-Engine" target="_blank" rel="noopener noreferrer" class="bg-white text-stone-900 px-8 py-4 rounded-full flex items-center justify-center gap-3 hover:bg-violet-100 transition shadow-lg hover:scale-105 font-bold">
+              Clone on GitHub
+              <i class="ph ph-arrow-right"></i>
+            </a>
+            <a href="https://github.com/fatinm1/LLM-Engine/blob/main/README.md" target="_blank" rel="noopener noreferrer" class="text-white border border-stone-600 px-8 py-4 rounded-full font-medium hover:bg-white/10 transition">
+              Read the README
+            </a>
+          </div>
         </div>
       </div>
     </div>
