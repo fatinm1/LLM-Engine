@@ -41,7 +41,8 @@ public:
         const std::string&   prompt,
         const SamplerConfig& sampler_cfg   = {},
         size_t               max_new_tokens = 512,
-        TokenCallback        callback       = nullptr
+        TokenCallback        callback       = nullptr,
+        std::function<bool()> stop_check   = nullptr
     );
 
     // Reset KV cache (start new conversation)

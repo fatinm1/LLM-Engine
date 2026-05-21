@@ -264,7 +264,8 @@ const std::vector<float>& Model::forward(TokenID token, size_t pos)
 std::string Model::generate(const std::string& prompt,
                             const SamplerConfig& sampler_cfg,
                             size_t max_new_tokens,
-                            TokenCallback callback)
+                            TokenCallback callback,
+                            std::function<bool()> stop_check)
 {
     Sampler sampler(sampler_cfg);
     const bool has_begin_of_text = prompt.find("<|begin_of_text|>") != std::string::npos;
@@ -281,6 +282,10 @@ std::string Model::generate(const std::string& prompt,
     for (size_t i = 0; i + 1 < context.size(); ++i) {
         if (kv_cache_.is_full()) {
             break;
+        }
+        if (stop_check && stop_check()) {
+            kv_cache_.clear();
+            return "";
         }
         forward(context[i], kv_cache_.size());
         kv_cache_.advance();

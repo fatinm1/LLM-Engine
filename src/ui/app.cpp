@@ -32,7 +32,7 @@ static std::string pick_file_macos()
     return path;
 }
 
-static std::string read_file(const std::string& path, size_t max_bytes = 32768)
+static std::string read_file(const std::string& path, size_t max_bytes = 4096)
 {
     std::ifstream f(path);
     if (!f.is_open()) {
@@ -40,7 +40,7 @@ static std::string read_file(const std::string& path, size_t max_bytes = 32768)
     }
     std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     if (content.size() > max_bytes) {
-        content = content.substr(0, max_bytes) + "\n... [truncated at 32KB]";
+        content = content.substr(0, max_bytes) + "\n... [truncated at 4KB]";
     }
     return content;
 }
@@ -394,7 +394,8 @@ void App::submit_prompt(const std::string& prompt)
                     tps_.store(model_->tokens_per_second());
                     tokens_generated_.store(model_->tokens_generated());
                     return !stop_flag_.load();
-                });
+                },
+                [this]() -> bool { return stop_flag_.load(); });
         } catch (const std::exception& e) {
             std::lock_guard<std::mutex> lk(msg_mutex_);
             messages_.back().text += "\n[Error: ";
@@ -404,6 +405,9 @@ void App::submit_prompt(const std::string& prompt)
         {
             std::lock_guard<std::mutex> lk(msg_mutex_);
             if (!messages_.empty()) {
+                if (stop_flag_.load() && messages_.back().text.empty()) {
+                    messages_.back().text = "[Stopped]";
+                }
                 messages_.back().complete = true;
             }
         }
