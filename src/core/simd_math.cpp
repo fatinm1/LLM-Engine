@@ -328,17 +328,27 @@ void dequant_q3_k_m(const void* src, float* out, size_t n_blocks)
     }
 }
 
-void dequant_q4_k_m(const void* src, float* out, size_t n_blocks)
+// ggml/src/ggml-quants.c — get_scale_min_k4 + dequantize_row_q4_K (Q4_K_S / Q4_K_M block layout)
+static inline void get_scale_min_k4(int j, const uint8_t* q, uint8_t* d, uint8_t* m)
+{
+    if (j < 4) {
+        *d = q[j] & 63;
+        *m = q[j + 4] & 63;
+    } else {
+        *d = (q[j + 4] & 0xF) | ((q[j - 4] >> 6) << 4);
+        *m = (q[j + 4] >> 4) | ((q[j - 0] >> 6) << 4);
+    }
+}
+
+static void dequant_q4_k_impl(const void* src, float* out, size_t n_blocks)
 {
     const auto* blocks = static_cast<const uint8_t*>(src);
-    size_t out_idx = 0;
+    float* y = out;
 
     for (size_t b = 0; b < n_blocks; ++b) {
         const uint8_t* block = blocks + b * 144;
-        float d = fp16_to_fp32(static_cast<uint16_t>(block[0]) |
-                               (static_cast<uint16_t>(block[1]) << 8));
-        float dmin = fp16_to_fp32(static_cast<uint16_t>(block[2]) |
-                                  (static_cast<uint16_t>(block[3]) << 8));
+        float d = fp16_to_fp32(*reinterpret_cast<const uint16_t*>(block + 0));
+        float dmin = fp16_to_fp32(*reinterpret_cast<const uint16_t*>(block + 2));
         if (!std::isfinite(d)) {
             d = 0.0f;
         }
@@ -346,47 +356,64 @@ void dequant_q4_k_m(const void* src, float* out, size_t n_blocks)
             dmin = 0.0f;
         }
 
-        uint8_t scales[12];
-        std::memcpy(scales, block + 4, 12);
+        const uint8_t* scales = block + 4;
+        const uint8_t* q = block + 16;
 
-        auto get_scale = [&](int is, int shift) -> int {
-            const int j = is / 2;
-            const int sc = scales[j];
-            if (is < 4) {
-                return (sc >> shift) & 0x3F;
-            }
-            if (is < 8) {
-                return (sc >> (shift + 2)) & 0x3F;
-            }
-            if (is < 10) {
-                return (sc >> (shift + 4)) & 0x3F;
-            }
-            return (sc >> (shift + 6)) & 0x3F;
-        };
-
-        const uint8_t* qs = block + 16;
         int is = 0;
-        for (int j = 0; j < 8; ++j) {
-            const int sc0 = get_scale(is + 0, 0);
-            const int sc1 = get_scale(is + 1, 4);
-            const int sc2 = get_scale(is + 2, 0);
-            const int sc3 = get_scale(is + 3, 4);
-            const float dl0 = d * static_cast<float>(sc0);
-            const float dl1 = d * static_cast<float>(sc1);
-            const float ml0 = dmin * static_cast<float>(sc2);
-            const float ml1 = dmin * static_cast<float>(sc3);
-
-            for (int l = 0; l < 16; ++l) {
-                const uint8_t byte = qs[l];
-                const uint8_t lo = byte & 0x0F;
-                const uint8_t hi = byte >> 4;
-                out[out_idx++] = dl0 * static_cast<float>(lo) - ml0;
-                out[out_idx++] = dl1 * static_cast<float>(hi) - ml1;
+        for (int j = 0; j < 256; j += 64) {
+            uint8_t sc = 0;
+            uint8_t m = 0;
+            get_scale_min_k4(is + 0, scales, &sc, &m);
+            const float d1 = d * static_cast<float>(sc);
+            const float m1 = dmin * static_cast<float>(m);
+            get_scale_min_k4(is + 1, scales, &sc, &m);
+            const float d2 = d * static_cast<float>(sc);
+            const float m2 = dmin * static_cast<float>(m);
+            for (int l = 0; l < 32; ++l) {
+                *y++ = d1 * static_cast<float>(q[l] & 0xF) - m1;
             }
-            qs += 16;
-            is += 4;
+            for (int l = 0; l < 32; ++l) {
+                *y++ = d2 * static_cast<float>(q[l] >> 4) - m2;
+            }
+            q += 32;
+            is += 2;
         }
     }
+}
+
+// Q4_K_S in mixed GGUF files: 144 bytes = 8 x block_q4_0 (ggml-quants.c dequantize_row_q4_0)
+static void dequant_q4_0_superblocks(const void* src, float* out, size_t n_superblocks)
+{
+    const auto* blocks = static_cast<const uint8_t*>(src);
+    float* y = out;
+
+    for (size_t sb = 0; sb < n_superblocks; ++sb) {
+        const uint8_t* base = blocks + sb * 144;
+        for (int sub = 0; sub < 8; ++sub) {
+            const uint8_t* block = base + sub * 18;
+            float d = fp16_to_fp32(*reinterpret_cast<const uint16_t*>(block + 0));
+            if (!std::isfinite(d)) {
+                d = 0.0f;
+            }
+            const uint8_t* qs = block + 2;
+            for (int j = 0; j < 16; ++j) {
+                const int x0 = static_cast<int>((qs[j] & 0x0F) - 8);
+                const int x1 = static_cast<int>((qs[j] >> 4) - 8);
+                *y++ = static_cast<float>(x0) * d;
+                *y++ = static_cast<float>(x1) * d;
+            }
+        }
+    }
+}
+
+void dequant_q4_k_m(const void* src, float* out, size_t n_blocks)
+{
+    dequant_q4_k_impl(src, out, n_blocks);
+}
+
+void dequant_q4_k_s(const void* src, float* out, size_t n_blocks)
+{
+    dequant_q4_0_superblocks(src, out, n_blocks);
 }
 
 }  // namespace llm::simd

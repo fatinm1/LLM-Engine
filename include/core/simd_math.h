@@ -17,6 +17,7 @@ void  silu(const float* x, float* out, size_t n);
 void  softmax(float* x, size_t n);
 void  dequant_q3_k_m(const void* src, float* out, size_t n_blocks);
 void  dequant_q4_k_m(const void* src, float* out, size_t n_blocks);
+void  dequant_q4_k_s(const void* src, float* out, size_t n_blocks);
 void  dequant_q8_0(const void* src, float* out, size_t n_blocks);
 
 }  // namespace llm::simd

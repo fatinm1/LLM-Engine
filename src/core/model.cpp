@@ -125,7 +125,42 @@ std::vector<float> Model::dequant_tensor(const std::string& name)
         simd::dequant_q3_k_m(t->data, out.data(), n_blocks);
         break;
     }
-    case GGMLType::Q4_K_S:
+    case GGMLType::Q4_K_S: {
+        size_t n_blocks = n_elems / 256;
+        simd::dequant_q4_k_s(t->data, out.data(), n_blocks);
+        if (name == "token_embd.weight") {
+            const uint8_t* raw = static_cast<const uint8_t*>(t->data);
+            uint16_t d_raw;
+            std::memcpy(&d_raw, raw + 0, 2);
+            auto fp16 = [](uint16_t h) -> float {
+                uint32_t sign = (h >> 15) & 1;
+                uint32_t exp = (h >> 10) & 0x1F;
+                uint32_t mant = h & 0x3FF;
+                uint32_t f32;
+                if (exp == 0) {
+                    f32 = (sign << 31) | (mant << 13);
+                } else if (exp == 31) {
+                    f32 = (sign << 31) | 0x7F800000 | (mant << 13);
+                } else {
+                    f32 = (sign << 31) | ((exp + 112) << 23) | (mant << 13);
+                }
+                float r;
+                std::memcpy(&r, &f32, sizeof(r));
+                return r;
+            };
+            const float d = fp16(d_raw);
+            const int q0_lo = static_cast<int>((raw[2] & 0x0F) - 8);
+            std::cerr << "token_embd block0 (Q4_K_S=8xQ4_0): d=" << d << " d_raw=0x" << std::hex
+                      << d_raw << std::dec << " qs[0] lo nibble -> q-8=" << q0_lo
+                      << " expect[0]=d*(q-8)=" << (d * static_cast<float>(q0_lo)) << "\n";
+            std::cerr << "First 8 dequant outputs: ";
+            for (int i = 0; i < 8; ++i) {
+                std::cerr << out[i] << " ";
+            }
+            std::cerr << "\n";
+        }
+        break;
+    }
     case GGMLType::Q4_K_M: {
         size_t n_blocks = n_elems / 256;
         simd::dequant_q4_k_m(t->data, out.data(), n_blocks);
@@ -197,6 +232,24 @@ Model::Model(GGUFFile& gguf) : gguf_(gguf)
     tokenizer_ = std::make_unique<Tokenizer>(gguf);
 
     token_embd_ = dequant_tensor("token_embd.weight");
+
+    {
+        int nans = 0, zeros = 0;
+        float mn = 1e9f, mx = -1e9f;
+        for (float v : token_embd_) {
+            if (std::isnan(v)) {
+                ++nans;
+            } else if (v == 0.f) {
+                ++zeros;
+            } else {
+                mn = std::min(mn, v);
+                mx = std::max(mx, v);
+            }
+        }
+        std::cerr << "token_embd_: size=" << token_embd_.size() << " nan=" << nans << " zeros=" << zeros
+                  << " min=" << mn << " max=" << mx << "\n";
+    }
+
     output_norm_ = dequant_tensor("output_norm.weight");
     // Try output.weight first; fall back to token_embd.weight (weight tying)
     if (gguf_.find_tensor("output.weight")) {
@@ -439,28 +492,39 @@ const std::vector<float>& Model::forward(TokenID token, size_t pos)
     const float* emb = token_embd_.data() + static_cast<size_t>(token) * D;
     std::memcpy(x_.data(), emb, D * sizeof(float));
 
+    if (pos == 0) {
+        float mn = 1e9f, mx = -1e9f;
+        for (size_t i = 0; i < cfg_.embed_dim; ++i) {
+            mn = std::min(mn, x_[i]);
+            mx = std::max(mx, x_[i]);
+        }
+        std::cerr << "Token " << token << " embedding: min=" << mn << " max=" << mx << "\n";
+
+        std::cerr << "First 8 embedding values: ";
+        for (size_t i = 0; i < 8; ++i) {
+            std::cerr << x_[i] << " ";
+        }
+        std::cerr << "\n";
+
+        float mag = 0.f;
+        for (size_t i = 0; i < cfg_.embed_dim; ++i) {
+            mag += x_[i] * x_[i];
+        }
+        mag = std::sqrt(mag / cfg_.embed_dim);
+        std::cerr << "After embedding lookup: x_ mag=" << mag << "\n";
+    }
+
     for (size_t L = 0; L < cfg_.n_layers; ++L) {
         attention(L, pos);
-
-        bool has_nan = false;
-        for (float v : x_) {
-            if (std::isnan(v)) {
-                has_nan = true;
-                break;
-            }
-        }
-        if (has_nan) {
-            std::cerr << "NaN in x_ after attention layer " << L << "\n";
-            break;
-        }
-
         ffn(L);
 
-        for (float v : x_) {
-            if (std::isnan(v)) {
-                std::cerr << "NaN in x_ after ffn layer " << L << "\n";
-                break;
+        if (pos == 0) {
+            float mag = 0.f;
+            for (size_t i = 0; i < cfg_.embed_dim; ++i) {
+                mag += x_[i] * x_[i];
             }
+            mag = std::sqrt(mag / cfg_.embed_dim);
+            std::cerr << "Layer " << L << " x_ mag=" << mag << "\n";
         }
     }
 
