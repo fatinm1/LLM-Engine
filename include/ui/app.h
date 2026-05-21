@@ -65,6 +65,9 @@ private:
     // Model path input (simple text field — no native file dialog)
     char                         path_buf_[1024]  = {};
 
+    std::string attached_file_name_;
+    std::string attached_file_content_;
+
     // Sampler config (controlled by UI sliders)
     llm::SamplerConfig           sampler_cfg_;
 

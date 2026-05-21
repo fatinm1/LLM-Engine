@@ -2,10 +2,48 @@
 #include "imgui.h"
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <stdexcept>
 
 namespace llm::ui {
+
+static std::string pick_file_macos()
+{
+    FILE* pipe = popen(
+        "osascript -e 'set f to choose file with prompt \"Select a text file\"' "
+        "-e 'POSIX path of f' 2>/dev/null",
+        "r");
+    if (!pipe) {
+        return "";
+    }
+    char buf[4096] = {};
+    if (!fgets(buf, sizeof(buf), pipe)) {
+        pclose(pipe);
+        return "";
+    }
+    pclose(pipe);
+    std::string path(buf);
+    while (!path.empty() && (path.back() == '\n' || path.back() == '\r')) {
+        path.pop_back();
+    }
+    return path;
+}
+
+static std::string read_file(const std::string& path, size_t max_bytes = 32768)
+{
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        return "";
+    }
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    if (content.size() > max_bytes) {
+        content = content.substr(0, max_bytes) + "\n... [truncated at 32KB]";
+    }
+    return content;
+}
 
 App::App()
 {
@@ -169,7 +207,8 @@ void App::render_chat()
 {
     const float input_h = 80.f;
     const float btn_w = 80.f;
-    const float messages_h = ImGui::GetContentRegionAvail().y - input_h - 12.f;
+    const float attach_h = 32.f;
+    const float messages_h = ImGui::GetContentRegionAvail().y - input_h - attach_h - 12.f;
 
     ImGui::BeginChild("##messages", {0.f, messages_h}, false);
     {
@@ -197,6 +236,30 @@ void App::render_chat()
     ImGui::EndChild();
 
     ImGui::Separator();
+
+    if (ImGui::Button("+ Attach file")) {
+        const std::string path = pick_file_macos();
+        if (!path.empty()) {
+            const std::string content = read_file(path);
+            if (!content.empty()) {
+                const size_t slash = path.rfind('/');
+                attached_file_name_ = (slash != std::string::npos) ? path.substr(slash + 1) : path;
+                attached_file_content_ = content;
+            }
+        }
+    }
+
+    if (!attached_file_name_.empty()) {
+        ImGui::SameLine();
+        ImGui::TextColored({0.4f, 0.8f, 1.0f, 1.0f}, "[%s]", attached_file_name_.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("x")) {
+            attached_file_name_.clear();
+            attached_file_content_.clear();
+        }
+    }
+
+    ImGui::Spacing();
 
     bool send = false;
     const float input_w = ImGui::GetContentRegionAvail().x - btn_w - 8.f;
@@ -288,6 +351,20 @@ void App::submit_prompt(const std::string& prompt)
         return;
     }
 
+    std::string full_prompt = prompt;
+    std::string display_prompt = prompt;
+
+    if (!attached_file_content_.empty()) {
+        full_prompt = "I'm sharing a file called '" + attached_file_name_ +
+                      "'. Here are its contents:\n\n```\n" + attached_file_content_ +
+                      "\n```\n\n" + prompt;
+        display_prompt = "[" + attached_file_name_ + "] " + prompt;
+        attached_file_name_.clear();
+        attached_file_content_.clear();
+    }
+
+    const std::string formatted = llm::format_llama3_prompt(full_prompt);
+
     state_ = AppState::GENERATING;
     stop_flag_.store(false);
     tps_.store(0.f);
@@ -295,7 +372,7 @@ void App::submit_prompt(const std::string& prompt)
 
     {
         std::lock_guard<std::mutex> lk(msg_mutex_);
-        messages_.push_back({Message::Role::User, prompt, true});
+        messages_.push_back({Message::Role::User, display_prompt, true});
         messages_.push_back({Message::Role::Assistant, "", false});
         scroll_to_bottom_ = true;
     }
@@ -304,9 +381,8 @@ void App::submit_prompt(const std::string& prompt)
         gen_thread_.join();
     }
 
-    gen_thread_ = std::thread([this, prompt]() {
+    gen_thread_ = std::thread([this, formatted]() {
         try {
-            const std::string formatted = llm::format_llama3_prompt(prompt);
             model_->generate(
                 formatted, sampler_cfg_, 512,
                 [this](llm::TokenID, const std::string& piece) -> bool {
