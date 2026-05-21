@@ -17,8 +17,15 @@ add_custom_target(copy_model
 )
 
 add_custom_target(create_dmg
-    COMMAND hdiutil create -volname "LLM Engine"
-        -srcfolder "${BUNDLE_PATH}"
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_BINARY_DIR}/dmg-staging"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/dmg-staging"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${BUNDLE_PATH}"
+        "${CMAKE_BINARY_DIR}/dmg-staging/LLM Engine.app"
+    COMMAND ln -sf /Applications "${CMAKE_BINARY_DIR}/dmg-staging/Applications"
+    COMMAND hdiutil create
+        -volname "LLM Engine"
+        -srcfolder "${CMAKE_BINARY_DIR}/dmg-staging"
         -ov -format UDZO
         "${DMG_PATH}"
     DEPENDS copy_model
