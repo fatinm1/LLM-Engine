@@ -1,0 +1,1 @@
+{"engine":"llm-engine","model":"models/Llama-3.2-1B-Instruct-Q4_K_M.gguf","layers":16,"embed_dim":2048,"load_s":0.840,"prompt_tokens":42,"gen_tokens":128,"reps":3,"prefill_tok_s":11.559,"decode_tok_s":11.998,"peak_rss_mb":6794.7}

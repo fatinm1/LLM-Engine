@@ -49,7 +49,7 @@ echo "== llama.cpp, default settings (uses the GPU via Metal on Apple Silicon)"
 "$LLAMA_BENCH" -m "$MODEL" -p "$PROMPT_TOKENS" -n "$GEN" -r "$REPS" | tee "$OUT/llama_cpp.txt"
 
 echo
-echo "== llama.cpp, CPU only, all cores"
+echo "== llama.cpp, CPU only, default thread count"
 "$LLAMA_BENCH" -m "$MODEL" -p "$PROMPT_TOKENS" -n "$GEN" -r "$REPS" -ngl 0 | tee "$OUT/llama_cpp_cpu.txt"
 
 echo
