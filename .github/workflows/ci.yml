@@ -1,0 +1,10 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  unit-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build --target llm_tests --parallel
+      - run: ctest --test-dir build --output-on-failure

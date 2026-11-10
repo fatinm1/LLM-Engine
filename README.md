@@ -2,7 +2,9 @@
 
 A C++ desktop application that runs local LLM inference entirely on CPU — no internet, no API keys, no cloud.
 
-**Build:** Passing | **Platform:** macOS / Linux / Windows | **Language:** C++20 | **License:** MIT
+[![CI](https://github.com/fatinm1/LLM-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/fatinm1/LLM-Engine/actions/workflows/ci.yml)
+
+**Build:** See CI above | **Platform:** macOS / Linux / Windows | **Language:** C++20 | **License:** MIT
 
 ---
 
@@ -111,10 +113,8 @@ llm_engine/
 ```bash
 git clone https://github.com/fatinm1/LLM-Engine.git
 cd LLM-Engine
-git clone --depth=1 https://github.com/ocornut/imgui third_party/imgui
-git clone --depth=1 https://github.com/glfw/glfw third_party/glfw
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
+cmake --build build --parallel
 ```
 
 Binaries:
@@ -312,3 +312,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 - **Dear ImGui** — Omar Cornut
 - **GLFW** — the GLFW contributors
 - **Models** — Meta AI (Llama 3.2), Mistral AI
+
+## Reproducing performance and correctness
+
+ImGui and GLFW are already vendored; do not clone over their directories. Build the test target with `cmake --build build --target llm_tests --parallel`, then run `ctest --test-dir build --output-on-failure`. The tokenizer integration test requires a local GGUF checkpoint and reports a skip when absent. Other tests exercise math, sampling, and KV cache behavior; they do not prove reference-model equivalence.
+
+Benchmark sources, machine details, and raw measurements are in [bench/](bench/) and [the write-up](docs/benchmark-writeup.md). Always distinguish prompt processing, decode-only throughput, and UI end-to-end throughput. The older screenshot/profile values and scalar estimates are not interchangeable with decode-only results. No benchmark number is a cross-machine guarantee.
