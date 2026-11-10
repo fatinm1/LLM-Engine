@@ -1,0 +1,8 @@
+model          models/Llama-3.2-1B-Instruct-Q4_K_M.gguf
+layers/dim     16 / 2048
+load time      4.43 s
+prompt tokens  42
+gen tokens     128 (last run)
+prefill        8.67 tok/s (median of 3)
+decode         12.64 tok/s (median of 3)
+peak RSS       5756 MB

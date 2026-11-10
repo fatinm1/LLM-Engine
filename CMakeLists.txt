@@ -45,6 +45,10 @@ target_include_directories(llm_core PUBLIC
     ${CMAKE_SOURCE_DIR}/include
 )
 
+# Headless benchmark (no UI dependencies)
+add_executable(llm_bench bench/llm_bench.cpp)
+target_link_libraries(llm_bench PRIVATE llm_core)
+
 find_package(OpenGL REQUIRED)
 
 add_executable(llm_desktop
