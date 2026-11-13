@@ -2,9 +2,9 @@
 
 ## 60-second demo
 
-https://github.com/user-attachments/assets/c306283c-325e-445d-86bf-2b1832349792
+https://github.com/user-attachments/assets/f90024b7-6b12-49b7-998a-685a7004ccea
 
-**[Download MP4](https://github.com/fatinm1/LLM-Engine/releases/download/demo-v1/LLM-Engine-Demo.mp4)** · 60 seconds
+**[Download MP4](https://github.com/user-attachments/assets/f90024b7-6b12-49b7-998a-685a7004ccea)** · 60 seconds
 
 See the local desktop interface, GGUF model loading, generation controls, and the C++ inference pipeline.
 
@@ -320,3 +320,4 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 - **Dear ImGui** — Omar Cornut
 - **GLFW** — the GLFW contributors
 - **Models** — Meta AI (Llama 3.2), Mistral AI
+
