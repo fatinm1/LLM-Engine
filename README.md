@@ -1,5 +1,13 @@
 # LLM Engine
 
+## 60-second demo
+
+[![Watch the LLM Engine demo](https://github.com/fatinm1/LLM-Engine/releases/download/demo-v1/LLM-Engine-Thumbnail.jpg)](https://github.com/fatinm1/LLM-Engine/releases/tag/demo-v1)
+
+**[Watch or download the demo](https://github.com/fatinm1/LLM-Engine/releases/download/demo-v1/LLM-Engine-Demo.mp4)** · 60 seconds · American English narration
+
+See the local desktop interface, GGUF model loading, generation controls, and the C++ inference pipeline.
+
 A C++ desktop application that runs local LLM inference entirely on CPU — no internet, no API keys, no cloud.
 
 **Build:** Passing | **Platform:** macOS / Linux / Windows | **Language:** C++20 | **License:** MIT
