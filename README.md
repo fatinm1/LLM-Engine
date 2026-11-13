@@ -2,9 +2,9 @@
 
 ## 60-second demo
 
-[![Watch the LLM Engine demo](https://github.com/fatinm1/LLM-Engine/releases/download/demo-v1/LLM-Engine-Thumbnail.jpg)](https://github.com/fatinm1/LLM-Engine/releases/tag/demo-v1)
+https://github.com/user-attachments/assets/c306283c-325e-445d-86bf-2b1832349792
 
-**[Watch or download the demo](https://github.com/fatinm1/LLM-Engine/releases/download/demo-v1/LLM-Engine-Demo.mp4)** · 60 seconds · American English narration
+**[Download MP4](https://github.com/fatinm1/LLM-Engine/releases/download/demo-v1/LLM-Engine-Demo.mp4)** · 60 seconds · American English narration
 
 See the local desktop interface, GGUF model loading, generation controls, and the C++ inference pipeline.
 
