@@ -32,9 +32,17 @@ echo "== machine"
 } | tee "$OUT/machine.txt"
 
 echo
-echo "== llm-engine"
+echo "== llm-engine, all cores"
 "$ROOT/build/llm_bench" "$MODEL" --gen "$GEN" --reps "$REPS" | tee "$OUT/llm_engine.txt"
 "$ROOT/build/llm_bench" "$MODEL" --gen "$GEN" --reps "$REPS" --json > "$OUT/llm_engine.json"
+
+echo
+echo "== llm-engine, 4 threads (llama.cpp's default CPU thread count on M-series)"
+"$ROOT/build/llm_bench" "$MODEL" --gen "$GEN" --reps "$REPS" --threads 4 | tee "$OUT/llm_engine_4t.txt"
+
+echo
+echo "== llm-engine, 1 thread"
+"$ROOT/build/llm_bench" "$MODEL" --gen "$GEN" --reps "$REPS" --threads 1 | tee "$OUT/llm_engine_1t.txt"
 
 PROMPT_TOKENS=$(sed -n 's/.*"prompt_tokens":\([0-9]*\).*/\1/p' "$OUT/llm_engine.json")
 
@@ -53,7 +61,7 @@ echo "== llama.cpp, CPU only, default thread count"
 "$LLAMA_BENCH" -m "$MODEL" -p "$PROMPT_TOKENS" -n "$GEN" -r "$REPS" -ngl 0 | tee "$OUT/llama_cpp_cpu.txt"
 
 echo
-echo "== llama.cpp, 1 thread, CPU only (closest to LLM Engine's single threaded matvec)"
+echo "== llama.cpp, 1 thread, CPU only"
 "$LLAMA_BENCH" -m "$MODEL" -p "$PROMPT_TOKENS" -n "$GEN" -r "$REPS" -t 1 -ngl 0 | tee "$OUT/llama_cpp_1t.txt"
 
 echo

@@ -11,6 +11,7 @@ add_executable(llm_tests
     test_kv_cache.cpp
     test_sampler.cpp
     test_tokenizer.cpp
+    test_quant.cpp
 )
 target_link_libraries(llm_tests PRIVATE GTest::gtest_main llm_core)
 target_include_directories(llm_tests PRIVATE ${CMAKE_SOURCE_DIR}/include)

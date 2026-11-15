@@ -3,7 +3,10 @@
 // with llama.cpp's llama-bench on the same file and machine.
 //
 // Usage:
-//   llm_bench <model.gguf> [--gen N] [--reps N] [--json]
+//   llm_bench <model.gguf> [--gen N] [--reps N] [--threads N] [--reference] [--json]
+//
+//   --threads N    worker threads (default: LLM_THREADS or all cores)
+//   --reference    dequantize weights to FP32 (the pre-quantized-kernel path)
 //
 // Prefill and decode are timed separately. Model::generate() reports a single
 // tokens/sec figure that includes prompt processing, which understates decode
@@ -22,6 +25,7 @@
 
 #include "core/gguf_parser.h"
 #include "core/model.h"
+#include "core/quant.h"
 
 namespace {
 
@@ -65,7 +69,7 @@ struct RunResult {
 int main(int argc, char** argv)
 {
     if (argc < 2) {
-        std::cerr << "Usage: llm_bench <model.gguf> [--gen N] [--reps N] [--json]\n";
+        std::cerr << "Usage: llm_bench <model.gguf> [--gen N] [--reps N] [--threads N] [--reference] [--json]\n";
         return 1;
     }
 
@@ -73,6 +77,7 @@ int main(int argc, char** argv)
     size_t gen = 128;
     int reps = 3;
     bool json = false;
+    llm::ModelOptions opts = llm::ModelOptions::from_env();
     for (int i = 2; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--gen") && i + 1 < argc) {
             gen = static_cast<size_t>(std::atoi(argv[++i]));
@@ -80,12 +85,16 @@ int main(int argc, char** argv)
             reps = std::max(1, std::atoi(argv[++i]));
         } else if (!std::strcmp(argv[i], "--json")) {
             json = true;
+        } else if (!std::strcmp(argv[i], "--threads") && i + 1 < argc) {
+            opts.n_threads = static_cast<size_t>(std::max(0, std::atoi(argv[++i])));
+        } else if (!std::strcmp(argv[i], "--reference")) {
+            opts.reference_fp32 = true;
         }
     }
 
     const auto t_load0 = Clock::now();
     auto gguf = llm::GGUFParser::parse(path);
-    auto model = llm::Model::load(gguf);
+    auto model = llm::Model::load(gguf, opts);
     const double load_s = seconds_since(t_load0, Clock::now());
 
     // A prompt that tends to produce long answers, so greedy decoding rarely
@@ -137,22 +146,30 @@ int main(int argc, char** argv)
 
     const auto& cfg = model->config();
     const double rss = peak_rss_mb();
+    const double wmb = static_cast<double>(model->weight_bytes_per_token()) / (1024.0 * 1024.0);
+    const double gbps = median(tg_tps) * wmb / 1024.0;
+    const char* kernels = model->reference_fp32() ? "fp32-reference" : llm::quant::backend_name();
 
     if (json) {
         std::printf(
             "{\"engine\":\"llm-engine\",\"model\":\"%s\",\"layers\":%u,\"embed_dim\":%u,"
             "\"load_s\":%.3f,\"prompt_tokens\":%zu,\"gen_tokens\":%zu,\"reps\":%d,"
-            "\"prefill_tok_s\":%.3f,\"decode_tok_s\":%.3f,\"peak_rss_mb\":%.1f}\n",
+            "\"prefill_tok_s\":%.3f,\"decode_tok_s\":%.3f,\"peak_rss_mb\":%.1f,"
+            "\"threads\":%zu,\"kernels\":\"%s\",\"weight_mb_per_token\":%.1f,\"decode_gb_s\":%.2f}\n",
             path.c_str(), cfg.n_layers, cfg.embed_dim, load_s, n_prompt,
-            runs.back().gen_tokens, reps, median(pp_tps), median(tg_tps), rss);
+            runs.back().gen_tokens, reps, median(pp_tps), median(tg_tps), rss,
+            model->n_threads(), kernels, wmb, gbps);
     } else {
         std::printf("model          %s\n", path.c_str());
         std::printf("layers/dim     %u / %u\n", cfg.n_layers, cfg.embed_dim);
+        std::printf("kernels        %s, %zu threads\n", kernels, model->n_threads());
+        std::printf("weights/token  %.0f MB\n", wmb);
         std::printf("load time      %.2f s\n", load_s);
         std::printf("prompt tokens  %zu\n", n_prompt);
         std::printf("gen tokens     %zu (last run)\n", runs.back().gen_tokens);
         std::printf("prefill        %.2f tok/s (median of %d)\n", median(pp_tps), reps);
-        std::printf("decode         %.2f tok/s (median of %d)\n", median(tg_tps), reps);
+        std::printf("decode         %.2f tok/s (median of %d), ~%.1f GB/s of weights\n",
+                    median(tg_tps), reps, gbps);
         std::printf("peak RSS       %.0f MB\n", rss);
     }
     return 0;

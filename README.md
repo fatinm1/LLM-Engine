@@ -10,7 +10,7 @@ A C++ desktop application that runs local LLM inference entirely on CPU — no i
 
 ## Screenshots
 
-### Desktop Chat UI — Llama 3.2 running locally at 4.1 tok/s
+### Desktop Chat UI — Llama 3.2 running locally
 ![LLM Engine desktop chat window](docs/screenshots/desktop-chat.png)
 
 ### Landing Page
@@ -23,7 +23,7 @@ A C++ desktop application that runs local LLM inference entirely on CPU — no i
 ![Supported models section](docs/screenshots/models.png)
 
 ### Quantization Formats
-![Quantization formats — Q3_K_M, Q4_K_S, F32](docs/screenshots/quantization.png)
+![Quantization formats](docs/screenshots/quantization.png)
 
 ### Zero-Copy Model Loading
 ![Zero-copy mmap model loading](docs/screenshots/zero-copy.png)
@@ -36,9 +36,12 @@ A C++ desktop application that runs local LLM inference entirely on CPU — no i
 ## Features
 
 - **Local inference** — runs entirely on CPU; no GPU required
-- **GGUF format support** — loads Llama 3.2 and Mistral models directly
-- **Mixed quantization** — supports Q3_K_M, Q4_K_S, Q4_K_M, Q8_0, and F32 weights
-- **Memory-mapped loading** — multi-GB models load without copying weights into RAM
+- **GGUF format support** — loads Llama 3.2 models directly
+- **Quantized kernels** — matrix-vector products run directly on packed Q4_K, Q6_K and Q8_0 blocks (NEON with `sdot` on Apple Silicon, AVX2 on x86, portable scalar fallback); weights are never expanded to FP32
+- **Supported weight types** — Q4_K, Q6_K, Q8_0, F32 and F16 (so `Q4_K_M` and `Q8_0` files work); other types such as Q3_K and Q5_K are not supported yet
+- **Memory-mapped loading** — weights are used straight from the mapped file, so memory stays close to the file size
+- **Multi-threaded** — matrix rows are split across all cores with dynamic chunking, so Apple's performance and efficiency cores both stay busy
+- **Llama 3 RoPE scaling** — applies the `rope_freqs` factors that Llama 3.1+ GGUFs carry
 - **BPE tokenizer** — SentencePiece-compatible, loaded from GGUF metadata
 - **KV cache** — O(n) generation via cached attention keys and values
 - **Sampling** — greedy, temperature, top-k, top-p nucleus, repeat penalty
@@ -54,13 +57,15 @@ LLM Engine is a from-scratch inference stack: GGUF parsing, tokenization, a tran
 
 ### How it fits together
 
-**GGUF loading.** When you open a `.gguf` file, the parser memory-maps the file read-only (`mmap` on Linux/macOS, `MapViewOfFile` on Windows). Metadata (architecture hyperparameters, tokenizer strings, merge scores) is parsed from the header. Tensor descriptors record name, shape, quantization type, and byte offset into the mapped region. At load time, the model **dequantizes weights into float buffers** for inference; tensor `data` pointers reference the mmap for parsing, while `Model` holds dequantized `std::vector<float>` weights used in `matvec` and attention.
+**GGUF loading.** When you open a `.gguf` file, the parser memory-maps the file read-only (`mmap` on Linux/macOS, `MapViewOfFile` on Windows). Metadata (architecture hyperparameters, tokenizer strings, merge scores) is parsed from the header. Tensor descriptors record name, shape, quantization type, and byte offset into the mapped region. Weight matrices are wrapped as `quant::QMatrix` views that point **directly into the mapped file** in their GGUF block format; nothing is copied or expanded. Only the small norm vectors are converted to FP32.
+
+**Quantized matrix-vector products.** Generating a token is dominated by matrix-vector products, and those are limited by how many bytes of weights must be read from memory. Before each product, the input vector is quantized once to 8-bit blocks (`Q8_K` for K-quant weights, 256 values per scale; `Q8_0`-style for Q8_0 weights). Each output row is then an integer dot product computed directly on the packed weight blocks, with the block scales applied once per sub-block. Rows are split across a fork-join `WorkerPool`. Setting `LLM_REFERENCE_FP32=1` switches back to dequantized FP32 weights, which `bench/llm_compare` uses as the reference when checking the kernels.
 
 **Tokenization.** The BPE tokenizer reads `tokenizer.ggml.tokens`, optional scores and token types, and BOS/EOS IDs from GGUF metadata. Text is split on spaces; each word is prefixed with the SentencePiece space marker `▁` (U+2581) and looked up as a whole token when possible, otherwise merged with BPE using vocabulary-derived pair scores. Byte-level fallback supports Llama 3 BYTE tokens in the vocabulary.
 
 **Transformer forward pass.** For each token at position `pos`:
 
-1. **Embedding** — index `token_embd` (with **weight tying**: `output.weight` falls back to `token_embd` when absent, as in Llama 3.2 1B).
+1. **Embedding** — dequantize one row of `token_embd` (with **weight tying**: when `output.weight` is absent, as in Llama 3.2 1B, the output projection reuses the same matrix rather than a copy).
 2. For each of `N` layers:
    - **Attention** — RMSNorm → Q/K/V projections → **RoPE** on Q and K → write K/V into the **KV cache** at `pos` → grouped-query attention over positions `0..pos` → output projection → residual add.
    - **FFN** — RMSNorm → gate/up linear → **SwiGLU** (`silu(gate) * up`) → down projection → residual add.
@@ -79,7 +84,8 @@ llm_engine/
 ├── include/core/       — engine headers
 ├── src/core/           — engine implementation
 ├── src/ui/             — Dear ImGui desktop app
-├── tests/              — GoogleTest suite (21+ tests)
+├── tests/              — GoogleTest suite
+├── bench/              — benchmarks, llama.cpp comparison, kernel correctness checks
 ├── scripts/            — CLI smoke test, setup script
 ├── third_party/        — ImGui, GLFW (vendored)
 └── models/             — place .gguf files here
@@ -89,13 +95,12 @@ llm_engine/
 
 ## Supported Models
 
-| Model | Size | Quantization | RAM Usage | Speed (Apple M-series) |
-|-------|------|--------------|-----------|-------------------------|
-| Llama 3.2 1B Instruct | 808 MB | Q4_K_M | ~1.2 GB | ~3 tok/s |
-| Llama 3.2 3B Instruct | ~2 GB | Q4_K_M | ~2.5 GB | ~1 tok/s |
-| Mistral 7B Instruct | ~4.1 GB | Q4_K_M | ~5 GB | est. &lt;1 tok/s |
+| Model | File size | Quantization | Status |
+|-------|-----------|--------------|--------|
+| Llama 3.2 1B Instruct | 808 MB | Q4_K_M | Primary target; benchmarked |
+| Llama 3.2 3B Instruct | ~2 GB | Q4_K_M | Same architecture; not yet benchmarked |
 
-*Speed figures are approximate on Apple Silicon in Release builds with scalar math paths. x86 builds can use AVX2 where available.*
+Memory use is about the file size plus the KV cache (~128 MB for 1B at 4,096 tokens). See [Performance](#performance) for measured speeds.
 
 ---
 
@@ -124,7 +129,9 @@ Binaries:
 
 ### macOS note
 
-On **Apple Silicon**, the build does not use AVX2 (`-mavx2` is disabled automatically). All SIMD entry points in `simd_math` compile **scalar fallbacks** — this is expected and handled in CMake. Use **Release** for usable generation speed; Debug builds are much slower.
+On **Apple Silicon**, CMake builds with `-mcpu=apple-m1`, which enables the NEON dot-product (`sdot`) instructions the quantized kernels use. Run `build/kernel_bench` to see which kernel backend was compiled in. Use **Release** for usable generation speed; Debug builds are much slower.
+
+To build without the desktop app (no GLFW/OpenGL needed), configure with `-DLLM_BUILD_UI=OFF`.
 
 ---
 
@@ -167,7 +174,9 @@ export LLM_MODEL_PATH=models/Llama-3.2-1B-Instruct-Q4_K_M.gguf
 ctest -R ModelTest -V
 ```
 
-**Current status:** 21 tests passing (tokenizer integration test skips when `LLM_MODEL_PATH` is unset or the file is missing).
+**Current status:** 32 tests passing. The tokenizer integration test skips when `LLM_MODEL_PATH` is unset or the file is missing.
+
+The kernel tests check each integer dot product (scalar, NEON and AVX2) against a float dot product of the dequantized weights and activations, check the full quantized matrix-vector product against the FP32 path, and check that the worker pool covers every row exactly once.
 
 ---
 
@@ -185,7 +194,10 @@ c++ -std=c++20 -O3 -ffast-math \
     src/core/model.cpp \
     src/core/kv_cache.cpp \
     src/core/sampler.cpp \
-    src/core/simd_math.cpp
+    src/core/simd_math.cpp \
+    src/core/quant.cpp \
+    src/core/parallel.cpp \
+    -pthread
 
 ./build/cli_test models/Llama-3.2-1B-Instruct-Q4_K_M.gguf
 ```
@@ -208,7 +220,7 @@ c++ -std=c++20 -O2 -I include -o build/dump_gguf \
 
 GGUF files are opened with **`mmap(PROT_READ, MAP_PRIVATE)`** on Linux and macOS (and the equivalent Windows mapping APIs). The parser reads the header and tensor index from the mapped region, then sets each tensor’s `data` pointer to **`mmap_base + data_offset + tensor.offset`**. No bulk `memcpy` of the weight blob is required to parse the file.
 
-The OS **demand-pages** data: physical RAM is touched only for bytes actually read during dequantization and inference. Opening an 808 MB file primarily costs **virtual address space** until the forward pass walks the weights. After parsing, the engine dequantizes tensors into float buffers for compute; the map remains the backing store for raw quantized bytes.
+The OS **demand-pages** data: physical RAM is touched only for bytes actually read during dequantization and inference. Opening an 808 MB file primarily costs **virtual address space** until the forward pass walks the weights. The quantized kernels then read weight blocks straight from the map during each forward pass, so resident memory stays close to the file size.
 
 `madvise(MADV_SEQUENTIAL)` is used during header/tensor-index parsing; `MADV_RANDOM` is applied after load when scattered tensor access is expected.
 
@@ -256,22 +268,19 @@ Attention scores for head `h` use `K[layer][t][kv_h]` and the output mixes `V[la
 <details>
 <summary><strong>Quantization formats</strong></summary>
 
-Weights in GGUF are stored in compressed blocks; the engine **dequantizes to float32** once at load time (per tensor) and runs inference in FP32.
+Weights in GGUF are stored in blocks: a group of quantized integers that share one or more scales. The engine keeps them in that form and computes on them directly. A `Q4_K_M` file such as Llama 3.2 1B mixes two block types: **Q4_K** (GGML type 12) for most layer matrices, and **Q6_K** (type 14) for the token embeddings and some `attn_v` / `ffn_down` matrices.
 
-**Q3_K_M (110 bytes / 256 elements)** — used heavily in Llama 3.2 1B layer weights:
+**Q4_K (144 bytes / 256 weights, 4.5 bits each)** — fp16 `d` and `dmin`, 12 bytes packing eight 6-bit scales and eight 6-bit mins (one per 32 weights), and 128 bytes of 4-bit values. Weight = `d * scale * q - dmin * min`.
 
-| Region | Size | Role |
-|--------|------|------|
-| `hmask` | 32 B | High bit per element (1 bit × 256) |
-| `qs` | 64 B | Low 2 bits per element (4 elements per byte) |
-| `scales` | 12 B | 6-bit scales for 16 sub-blocks of 16 elements |
-| `d` | 2 B | fp16 super-scale |
+In the dot product with an 8-bit activation block, the `min` term doesn't depend on the weight, so it is computed from precomputed sums of each 16 activations (`bsums`) instead of per element:
 
-Per element `i`: combine low and high bits into a 3-bit value in `0..7`, center to `-4..3`, multiply by sub-block scale (6-bit unpacked from `scales`, centered by subtracting 32) and global `d`.
+```text
+dot = d_act * ( d * Σ_j scale_j * Σ q * a   −   dmin * Σ_j min_j * Σ a )
+```
 
-**Q4_K_S / Q4_K_M (144 bytes / 256 elements)** — super-block with fp16 `d` and `dmin`, 12 bytes of packed 6-bit scales, and nibble-packed 4-bit quants. Llama 3.2 may use **Q4_K_S (type 14)** for tensors such as `token_embd.weight` while **Q3_K_M (type 12)** dominates layer matrices — **mixed quantization** within one file.
+**Q6_K (210 bytes / 256 weights, 6.56 bits each)** — 4 low bits and 2 high bits per weight stored separately, sixteen signed 8-bit scales (one per 16 weights), and an fp16 `d`. Weight = `d * scale * (q - 32)`.
 
-**Q8_0 (34 bytes / 32 elements)** — fp16 scale plus 32 int8 values.
+**Q8_0 (34 bytes / 32 weights)** — fp16 scale plus 32 int8 values.
 
 Unsupported types throw with the tensor name: `Model: unsupported quant type for tensor: …`
 
@@ -281,14 +290,18 @@ Unsupported types throw with the tensor name: `Model: unsupported quant type for
 
 ## Roadmap
 
-- [ ] Refine tokenizer BPE merges for full Llama 3 tiktoken vocabulary parity
-- [ ] Thread pool for parallel attention head computation
-- [ ] Dear ImGui desktop UI with streaming chat window
+- [x] Dear ImGui desktop UI with streaming chat window
+- [x] Chat template formatting (Llama 3 instruction format)
+- [x] Benchmark tools and llama.cpp comparison (`bench/`)
+- [x] Quantized Q4_K / Q6_K / Q8_0 kernels (NEON, AVX2, scalar) — weights stay in block format
+- [x] Multi-threaded matrix-vector products and attention
+- [x] Llama 3 RoPE frequency scaling (`rope_freqs`)
+- [ ] Llama 3 tokenizer parity with llama.cpp (pre-tokenizer regex; checked by `bench/verify.sh`)
+- [ ] Batched prompt processing (one matrix-matrix product for the whole prompt)
+- [ ] Concurrent request serving: paged KV cache, continuous batching, OpenAI-compatible API
+- [ ] Metal GPU backend
 - [ ] Native file dialog for model loading
-- [ ] Chat template formatting (Llama 3 instruction format)
-- [ ] Benchmark script (tokens/second across model sizes)
-- [ ] AVX2 acceleration on x86 (scalar fallbacks currently used on Apple Silicon)
-- [ ] Support for additional architectures (Phi-3, Gemma)
+- [ ] Support for additional quant types (Q5_K, Q3_K) and architectures
 
 ---
 
@@ -313,7 +326,30 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 - **GLFW** — the GLFW contributors
 - **Models** — Meta AI (Llama 3.2), Mistral AI
 
+## Performance
+
+Decode is memory-bandwidth bound: each generated token reads every weight once. Keeping weights in 4–6 bit blocks instead of expanding them to 32-bit floats cuts the bytes read per token by about 6.5×.
+
+Measured on a synthetic model with Llama 3.2 1B's exact shapes and Q4_K_M type mix (`bench/make_synthetic_kquant_gguf.py`), on a 2-vCPU x86 Linux VM, same machine for both:
+
+| | before (FP32 weights, 1 thread) | after, 1 thread | after, 2 threads |
+|---|---|---|---|
+| decode | 2.3 tok/s | 5.9 tok/s | 9.5 tok/s |
+| prefill | 2.3 tok/s | 5.9 tok/s | 10.0 tok/s |
+| weights read per token | 4.9 GB | 763 MB | 763 MB |
+| peak memory | 6,033 MB | 1,056 MB | 1,056 MB |
+| load time | 6.0 s | 0.2 s | 0.3 s |
+
+On the same synthetic model, the quantized kernels match the FP32 reference on every greedy token (32/32, minimum logit cosine similarity 0.99998).
+
+Apple M4 results: run `bench/compare.sh` and `bench/verify.sh` (below). The earlier M4 baseline, before these kernels, was 12.6 tok/s decode and 5,756 MB peak memory ([write-up](docs/benchmark-writeup.md)).
+
 ## Reproducing performance and correctness
+
+- `bench/compare.sh <model.gguf>` — LLM Engine (all cores, 4 threads, 1 thread) vs llama.cpp's `llama-bench` on the same file
+- `bench/verify.sh <model.gguf>` — quantized kernels vs the FP32 reference on the real model, and token ids vs llama.cpp's tokenizer
+- `build/kernel_bench` — time and bandwidth of one matrix-vector product per weight type
+- `build/llm_bench <model.gguf> --reference` — the old FP32 path, for before/after comparisons
 
 ImGui and GLFW are already vendored; do not clone over their directories. Build the test target with `cmake --build build --target llm_tests --parallel`, then run `ctest --test-dir build --output-on-failure`. The tokenizer integration test requires a local GGUF checkpoint and reports a skip when absent. Other tests exercise math, sampling, and KV cache behavior; they do not prove reference-model equivalence.
 

@@ -10,12 +10,44 @@ if(MSVC)
 else()
     add_compile_options(-O3 -ffast-math)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|x86_64|i[3-6]86)$")
-        add_compile_options(-march=native -mavx2 -mfma)
+        add_compile_options(-march=native -mavx2 -mfma -mf16c)
+    elseif(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
+        # Apple M1 and later: enables NEON dot-product (sdot) instructions.
+        add_compile_options(-mcpu=apple-m1)
     elseif(NOT APPLE)
         add_compile_options(-march=native)
     endif()
 endif()
 
+option(LLM_BUILD_UI "Build the Dear ImGui desktop app (needs GLFW, OpenGL)" ON)
+option(LLM_BUILD_TESTS "Build the GoogleTest suite" ON)
+
+add_library(llm_core STATIC
+    src/core/simd_math.cpp
+    src/core/gguf_parser.cpp
+    src/core/tokenizer.cpp
+    src/core/kv_cache.cpp
+    src/core/sampler.cpp
+    src/core/model.cpp
+    src/core/thread_pool.cpp
+    src/core/quant.cpp
+    src/core/parallel.cpp
+)
+target_include_directories(llm_core PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+find_package(Threads REQUIRED)
+target_link_libraries(llm_core PUBLIC Threads::Threads)
+
+# Headless tools (no UI dependencies)
+add_executable(llm_bench bench/llm_bench.cpp)
+target_link_libraries(llm_bench PRIVATE llm_core)
+add_executable(kernel_bench bench/kernel_bench.cpp)
+target_link_libraries(kernel_bench PRIVATE llm_core)
+add_executable(llm_compare bench/llm_compare.cpp)
+target_link_libraries(llm_compare PRIVATE llm_core)
+
+if(LLM_BUILD_UI)
 set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/third_party/imgui)
 set(IMGUI_SOURCES
     ${IMGUI_DIR}/imgui.cpp
@@ -31,23 +63,6 @@ set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/glfw)
-
-add_library(llm_core STATIC
-    src/core/simd_math.cpp
-    src/core/gguf_parser.cpp
-    src/core/tokenizer.cpp
-    src/core/kv_cache.cpp
-    src/core/sampler.cpp
-    src/core/model.cpp
-    src/core/thread_pool.cpp
-)
-target_include_directories(llm_core PUBLIC
-    ${CMAKE_SOURCE_DIR}/include
-)
-
-# Headless benchmark (no UI dependencies)
-add_executable(llm_bench bench/llm_bench.cpp)
-target_link_libraries(llm_bench PRIVATE llm_core)
 
 find_package(OpenGL REQUIRED)
 
@@ -83,9 +98,12 @@ if(APPLE)
     )
 endif()
 
-enable_testing()
-add_subdirectory(tests)
-
 if(APPLE)
     include(cmake/MacOSBundle.cmake)
+endif()
+endif()  # LLM_BUILD_UI
+
+if(LLM_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()
