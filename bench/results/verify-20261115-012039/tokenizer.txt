@@ -1,0 +1,20 @@
+MATCH     Hello\ world
+MATCH     The\ quick\ brown\ fox\ jumps\ over\ the\ lazy\ dog.
+MISMATCH  I\'m\ testing\ contractions:\ don\'t\,\ won\'t\,\ it\'s.
+  ours:   [128000,40,2846,7649,71895,82,25,1541,956,11,2834,956,11,433,596,13]
+  llama:  [128000,40,2846,7649,6155,4109,25,1541,956,11,2834,956,11,433,596,13]
+MATCH     Numbers\ 12345\ and\ 3.14159\,\ plus\ 2026-11-15.
+MISMATCH  \ \ leading\ and\ trailing\ spaces\ \ 
+  ours:   [128000,21307,323,28848,12908]
+  llama:  [128000,220,6522,323,28848,12908,256]
+MISMATCH  $'Tabs\tand\nnewlines'
+  ours:   [128000,38085,0,438,0,90302,82]
+  llama:  [128000,38085,53577,198,943,8128]
+MISMATCH  CamelCaseIdentifiers\ and\ snake_case_names\(\)
+  ours:   [128000,26479,301,4301,8887,82,323,26332,19640,9366,368]
+  llama:  [128000,26479,301,4301,29401,12099,323,26332,19640,9366,368]
+MISMATCH  $'Unicode: cafÃ©, naÃ¯ve, æ\235±äº¬, emoji ð\237\232\200'
+  ours:   [128000,35020,25,30203,165,11,4415,171,588,11,33970,12340,11,43465,33970,0]
+  llama:  [128000,35020,25,53050,11,95980,588,11,119109,11,43465,11410,248,222]
+
+tokenizer: 3 / 8 strings match llama.cpp

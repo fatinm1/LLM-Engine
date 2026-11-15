@@ -1,0 +1,10 @@
+model          models/Llama-3.2-1B-Instruct-Q4_K_M.gguf
+layers/dim     16 / 2048
+kernels        neon-dotprod, 1 threads
+weights/token  763 MB
+load time      0.09 s
+prompt tokens  42
+gen tokens     128 (last run)
+prefill        30.97 tok/s (median of 3)
+decode         30.49 tok/s (median of 3), ~22.7 GB/s of weights
+peak RSS       1079 MB

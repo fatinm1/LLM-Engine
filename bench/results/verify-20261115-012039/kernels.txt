@@ -1,0 +1,13 @@
+loading reference (FP32) model...
+prompt tokens: 35, generated: 64
+reference output: Here's a step-by-step explanation of how a transformer language model generates text:ĊĊ**Step 1: Input**ĊĊThe transformer language model receives an input sequence, which is a sequence of tokens (words, characters, or subwords) that make up the text. The input sequence is typically a batch of text, where
+
+loading quantized model (neon-dotprod kernels)...
+
+steps compared        64
+top-1 agreement       63 / 64 (98.4%)
+first divergence      step 41
+logit cosine          mean 0.999289, min 0.997182
+max |logit diff|      0.7510
+
+result: PASS
