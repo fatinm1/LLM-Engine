@@ -97,7 +97,7 @@ llm_engine/
 
 | Model | File size | Quantization | Status |
 |-------|-----------|--------------|--------|
-| Llama 3.2 1B Instruct | 808 MB | Q4_K_M | Primary target; benchmarked |
+| Llama 3.2 1B Instruct | 808 MB | Q4_K_M | Primary target; benchmarked (74.6 tok/s on M4 CPU) |
 | Llama 3.2 3B Instruct | ~2 GB | Q4_K_M | Same architecture; not yet benchmarked |
 
 Memory use is about the file size plus the KV cache (~128 MB for 1B at 4,096 tokens). See [Performance](#performance) for measured speeds.
@@ -328,21 +328,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## Performance
 
-Decode is memory-bandwidth bound: each generated token reads every weight once. Keeping weights in 4–6 bit blocks instead of expanding them to 32-bit floats cuts the bytes read per token by about 6.5×.
+Decode is memory-bandwidth bound: each generated token reads every weight once. Keeping weights in 4–6 bit blocks instead of expanding them to 32-bit floats cuts the bytes read per token from 4.9 GB to 763 MB.
 
-Measured on a synthetic model with Llama 3.2 1B's exact shapes and Q4_K_M type mix (`bench/make_synthetic_kquant_gguf.py`), on a 2-vCPU x86 Linux VM, same machine for both:
+Llama 3.2 1B Instruct Q4_K_M on a MacBook Air M4 (10 cores, 24 GB), native macOS build, 42-token prompt, 128 generated tokens, greedy, median of 3 runs. llama.cpp is build b1b770d90 (Homebrew 1.0.0) on the same machine and file. Raw output: [`bench/results/20261115-012213`](bench/results/20261115-012213).
 
-| | before (FP32 weights, 1 thread) | after, 1 thread | after, 2 threads |
-|---|---|---|---|
-| decode | 2.3 tok/s | 5.9 tok/s | 9.5 tok/s |
-| prefill | 2.3 tok/s | 5.9 tok/s | 10.0 tok/s |
-| weights read per token | 4.9 GB | 763 MB | 763 MB |
-| peak memory | 6,033 MB | 1,056 MB | 1,056 MB |
-| load time | 6.0 s | 0.2 s | 0.3 s |
+| engine | generation tok/s | prompt tok/s | peak memory | load time |
+|---|---|---|---|---|
+| LLM Engine before (FP32 weights, Oct 2026) | 12.6 | 8.7 | 5,756 MB | 4.4 s |
+| **LLM Engine, 1 thread** | **30.5** | 31.0 | 1,079 MB | 0.09 s |
+| **LLM Engine, 4 threads** | **74.6** | 76.4 | 1,078 MB | 0.09 s |
+| LLM Engine, 10 threads | 72.1 | 75.2 | 1,083 MB | 0.10 s |
+| llama.cpp CPU, 1 thread | 27.0 | 50.0 | | |
+| llama.cpp CPU, 4 threads | 71.9 | 163.6 | | |
+| llama.cpp Metal GPU | 111.0 | 863.7 | | |
 
-On the same synthetic model, the quantized kernels match the FP32 reference on every greedy token (32/32, minimum logit cosine similarity 0.99998).
+- Generation is **5.9× faster** than before and on par with llama.cpp's CPU backend at the same thread count (74.6 vs 71.9 tok/s at 4 threads, 30.5 vs 27.0 at 1 thread). At 4 threads it moves about 55 GB/s of weights, close to the M4's memory bandwidth, so more threads don't help.
+- Memory dropped **5.3×**, to roughly the file size plus the KV cache, because weights are used straight from the memory-mapped file.
+- Prompt processing is still about 2× behind llama.cpp's CPU backend: LLM Engine runs the prompt one token at a time, while llama.cpp batches it into matrix-matrix products. That is the next optimization.
 
-Apple M4 results: run `bench/compare.sh` and `bench/verify.sh` (below). The earlier M4 baseline, before these kernels, was 12.6 tok/s decode and 5,756 MB peak memory ([write-up](docs/benchmark-writeup.md)).
+**Correctness** (`bench/verify.sh`, same machine): against the FP32 reference path on the real model, the quantized kernels choose the same next token on 63 of 64 greedy steps (minimum logit cosine similarity 0.997). The single difference is at a step where two candidates were nearly tied, which 8-bit activation rounding can flip. Raw output: [`bench/results/verify-20261115-012039`](bench/results/verify-20261115-012039).
 
 ## Reproducing performance and correctness
 
