@@ -1,35 +1,62 @@
 # LLM Engine
 
-A C++ desktop application that runs local LLM inference entirely on CPU — no internet, no API keys, no cloud.
+A CPU inference engine for Llama 3.2, written in C++20 with no ML or inference libraries. It reads GGUF files, runs the transformer directly on the quantized weights, and on an Apple M4 generates text at the same speed as llama.cpp's CPU backend.
 
 [![CI](https://github.com/fatinm1/LLM-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/fatinm1/LLM-Engine/actions/workflows/ci.yml)
 
-**Build:** See CI above | **Platform:** macOS / Linux / Windows | **Language:** C++20 | **License:** MIT
+**Platform:** macOS / Linux / Windows | **Language:** C++20 | **License:** MIT
 
----
+## Results
 
-## Screenshots
+Decode is memory-bandwidth bound: each generated token reads every weight once. Keeping weights in 4–6 bit blocks instead of expanding them to 32-bit floats cuts the bytes read per token from 4.9 GB to 763 MB.
 
-### Desktop Chat UI — Llama 3.2 running locally
+Llama 3.2 1B Instruct Q4_K_M on a MacBook Air M4 (10 cores, 24 GB), native macOS build, 42-token prompt, 128 generated tokens, greedy, median of 3 runs. llama.cpp is build b1b770d90 (Homebrew 1.0.0) on the same machine and file. Raw output: [`bench/results/20261115-012213`](bench/results/20261115-012213).
+
+| engine | generation tok/s | prompt tok/s | peak memory | load time |
+|---|---|---|---|---|
+| LLM Engine before (FP32 weights, Oct 2026) | 12.6 | 8.7 | 5,756 MB | 4.4 s |
+| **LLM Engine, 1 thread** | **30.5** | 31.0 | 1,079 MB | 0.09 s |
+| **LLM Engine, 4 threads** | **74.6** | 76.4 | 1,078 MB | 0.09 s |
+| LLM Engine, 10 threads | 72.1 | 75.2 | 1,083 MB | 0.10 s |
+| llama.cpp CPU, 1 thread | 27.0 | 50.0 | | |
+| llama.cpp CPU, 4 threads | 71.9 | 163.6 | | |
+| llama.cpp Metal GPU | 111.0 | 863.7 | | |
+
+- Generation is **5.9× faster** than before and on par with llama.cpp's CPU backend at the same thread count (74.6 vs 71.9 tok/s at 4 threads, 30.5 vs 27.0 at 1 thread). At 4 threads it moves about 55 GB/s of weights, close to the M4's memory bandwidth, so more threads don't help.
+- Memory dropped **5.3×**, to roughly the file size plus the KV cache, because weights are used straight from the memory-mapped file.
+- Prompt processing is still about 2× behind llama.cpp's CPU backend: LLM Engine runs the prompt one token at a time, while llama.cpp batches it into matrix-matrix products. That is the next optimization.
+
+**Correctness** (`bench/verify.sh`, same machine): against the FP32 reference path on the real model, the quantized kernels choose the same next token on 63 of 64 greedy steps (minimum logit cosine similarity 0.997). The single difference is at a step where two candidates were nearly tied, which 8-bit activation rounding can flip. Raw output: [`bench/results/verify-20261115-012039`](bench/results/verify-20261115-012039).
+
+## Reproducing performance and correctness
+
+- `bench/compare.sh <model.gguf>` — LLM Engine (all cores, 4 threads, 1 thread) vs llama.cpp's `llama-bench` on the same file
+- `bench/verify.sh <model.gguf>` — quantized kernels vs the FP32 reference on the real model, and token ids vs llama.cpp's tokenizer
+- `build/kernel_bench` — time and bandwidth of one matrix-vector product per weight type
+- `build/llm_bench <model.gguf> --reference` — the old FP32 path, for before/after comparisons
+
+Numbers are from one machine and are not a guarantee on other hardware. Prompt processing, generation and end-to-end UI speed are different measurements; the table above reports the first two separately. More detail is in [the write-up](docs/benchmark-writeup.md).
+
+## Known limitations
+
+- **The tokenizer does not match llama.cpp yet.** `bench/verify.sh` compares token ids on 8 test strings and 3 match. Plain English sentences and numbers match. Contractions, leading and trailing spaces, tabs and newlines, camelCase identifiers and non-ASCII text do not, because the Llama 3 pre-tokenizer regex is not implemented. Prompts with those features reach the model as different tokens than the reference would produce. Raw output: [`tokenizer.txt`](bench/results/verify-20261115-012039/tokenizer.txt).
+- **Prompt processing is about half the speed of llama.cpp's CPU backend** (76 vs 164 tok/s). The prompt is run one token at a time instead of as a batch.
+- **CPU only.** llama.cpp with Metal generates at 111 tok/s on the same machine.
+- **One model family.** Llama 3.2 with Q4_K, Q6_K, Q8_0, F32 and F16 weights. Only the 1B model has been benchmarked. Q3_K and Q5_K files will not load.
+- **Correctness is checked against this project's own FP32 path**, not against llama.cpp's logits.
+- **Benchmarks are Apple Silicon only.** The AVX2 kernels have unit tests, but CI runs on Apple Silicon, so they are not exercised there, and they have not been benchmarked with a real model on x86.
+
+## What is original and what is not
+
+The GGUF container, the Q4_K / Q6_K / Q8_0 block layouts, and the idea of quantizing activations to 8-bit blocks and running integer dot products on packed weights all come from [llama.cpp / ggml](https://github.com/ggerganov/llama.cpp). The dequantization routines follow its reference implementation so that files decode identically. Everything in this repository is a separate implementation: the GGUF parser, tokenizer, forward pass, KV cache, sampler, NEON / AVX2 / scalar kernels, worker pool and desktop UI. No llama.cpp code or any other ML or inference library is linked or compiled in. Dear ImGui and GLFW are used for the window.
+
+## Demo
+
+https://github.com/user-attachments/assets/f90024b7-6b12-49b7-998a-685a7004ccea
+
+60 seconds: the desktop interface, loading a GGUF model, and generation controls.
+
 ![LLM Engine desktop chat window](docs/screenshots/desktop-chat.png)
-
-### Landing Page
-![LLM Engine landing page](docs/screenshots/hero.png)
-
-### Architecture
-![Transformer forward pass architecture](docs/screenshots/architecture.png)
-
-### Supported Models
-![Supported models section](docs/screenshots/models.png)
-
-### Quantization Formats
-![Quantization formats](docs/screenshots/quantization.png)
-
-### Zero-Copy Model Loading
-![Zero-copy mmap model loading](docs/screenshots/zero-copy.png)
-
-### Open Source CTA
-![Open source — run it on your machine](docs/screenshots/open-source.png)
 
 ---
 
@@ -42,7 +69,7 @@ A C++ desktop application that runs local LLM inference entirely on CPU — no i
 - **Memory-mapped loading** — weights are used straight from the mapped file, so memory stays close to the file size
 - **Multi-threaded** — matrix rows are split across all cores with dynamic chunking, so Apple's performance and efficiency cores both stay busy
 - **Llama 3 RoPE scaling** — applies the `rope_freqs` factors that Llama 3.1+ GGUFs carry
-- **BPE tokenizer** — SentencePiece-compatible, loaded from GGUF metadata
+- **BPE tokenizer** — loaded from GGUF metadata (does not yet match llama.cpp on all inputs; see [Known limitations](#known-limitations))
 - **KV cache** — O(n) generation via cached attention keys and values
 - **Sampling** — greedy, temperature, top-k, top-p nucleus, repeat penalty
 - **Streaming output** — tokens appear word by word as they are generated
@@ -53,7 +80,7 @@ A C++ desktop application that runs local LLM inference entirely on CPU — no i
 
 ## Architecture
 
-LLM Engine is a from-scratch inference stack: GGUF parsing, tokenization, a transformer forward pass, sampling, and a Dear ImGui front end. **llama.cpp is not used as a runtime dependency** — the format is referenced for compatibility, but matmul, attention, dequantization, and generation are implemented in this repository.
+LLM Engine implements the whole inference path itself: GGUF parsing, tokenization, a transformer forward pass, sampling, and a Dear ImGui front end. The file format and quantization layouts are llama.cpp's (see [What is original and what is not](#what-is-original-and-what-is-not)); no llama.cpp code or other inference library is linked.
 
 ### How it fits together
 
@@ -100,7 +127,7 @@ llm_engine/
 | Llama 3.2 1B Instruct | 808 MB | Q4_K_M | Primary target; benchmarked (74.6 tok/s on M4 CPU) |
 | Llama 3.2 3B Instruct | ~2 GB | Q4_K_M | Same architecture; not yet benchmarked |
 
-Memory use is about the file size plus the KV cache (~128 MB for 1B at 4,096 tokens). See [Performance](#performance) for measured speeds.
+Memory use is about the file size plus the KV cache (~128 MB for 1B at 4,096 tokens). See [Results](#results) for measured speeds.
 
 ---
 
@@ -174,7 +201,7 @@ export LLM_MODEL_PATH=models/Llama-3.2-1B-Instruct-Q4_K_M.gguf
 ctest -R ModelTest -V
 ```
 
-**Current status:** 32 tests passing. The tokenizer integration test skips when `LLM_MODEL_PATH` is unset or the file is missing.
+**Current status:** 33 tests. The tokenizer integration test skips when `LLM_MODEL_PATH` is unset or the file is missing.
 
 The kernel tests check each integer dot product (scalar, NEON and AVX2) against a float dot product of the dequantized weights and activations, check the full quantized matrix-vector product against the FP32 path, and check that the worker pool covers every row exactly once.
 
@@ -321,40 +348,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## Acknowledgements
 
-- **GGUF format** — Georgi Gerganov and the [llama.cpp](https://github.com/ggerganov/llama.cpp) project (format reference only; no llama.cpp inference code is linked or compiled into this project)
+- **GGUF format, K-quant block layouts and the quantized dot product approach** — Georgi Gerganov and the [llama.cpp](https://github.com/ggerganov/llama.cpp) project (used as the reference; no llama.cpp code is linked or compiled into this project)
 - **Dear ImGui** — Omar Cornut
 - **GLFW** — the GLFW contributors
-- **Models** — Meta AI (Llama 3.2), Mistral AI
-
-## Performance
-
-Decode is memory-bandwidth bound: each generated token reads every weight once. Keeping weights in 4–6 bit blocks instead of expanding them to 32-bit floats cuts the bytes read per token from 4.9 GB to 763 MB.
-
-Llama 3.2 1B Instruct Q4_K_M on a MacBook Air M4 (10 cores, 24 GB), native macOS build, 42-token prompt, 128 generated tokens, greedy, median of 3 runs. llama.cpp is build b1b770d90 (Homebrew 1.0.0) on the same machine and file. Raw output: [`bench/results/20261115-012213`](bench/results/20261115-012213).
-
-| engine | generation tok/s | prompt tok/s | peak memory | load time |
-|---|---|---|---|---|
-| LLM Engine before (FP32 weights, Oct 2026) | 12.6 | 8.7 | 5,756 MB | 4.4 s |
-| **LLM Engine, 1 thread** | **30.5** | 31.0 | 1,079 MB | 0.09 s |
-| **LLM Engine, 4 threads** | **74.6** | 76.4 | 1,078 MB | 0.09 s |
-| LLM Engine, 10 threads | 72.1 | 75.2 | 1,083 MB | 0.10 s |
-| llama.cpp CPU, 1 thread | 27.0 | 50.0 | | |
-| llama.cpp CPU, 4 threads | 71.9 | 163.6 | | |
-| llama.cpp Metal GPU | 111.0 | 863.7 | | |
-
-- Generation is **5.9× faster** than before and on par with llama.cpp's CPU backend at the same thread count (74.6 vs 71.9 tok/s at 4 threads, 30.5 vs 27.0 at 1 thread). At 4 threads it moves about 55 GB/s of weights, close to the M4's memory bandwidth, so more threads don't help.
-- Memory dropped **5.3×**, to roughly the file size plus the KV cache, because weights are used straight from the memory-mapped file.
-- Prompt processing is still about 2× behind llama.cpp's CPU backend: LLM Engine runs the prompt one token at a time, while llama.cpp batches it into matrix-matrix products. That is the next optimization.
-
-**Correctness** (`bench/verify.sh`, same machine): against the FP32 reference path on the real model, the quantized kernels choose the same next token on 63 of 64 greedy steps (minimum logit cosine similarity 0.997). The single difference is at a step where two candidates were nearly tied, which 8-bit activation rounding can flip. Raw output: [`bench/results/verify-20261115-012039`](bench/results/verify-20261115-012039).
-
-## Reproducing performance and correctness
-
-- `bench/compare.sh <model.gguf>` — LLM Engine (all cores, 4 threads, 1 thread) vs llama.cpp's `llama-bench` on the same file
-- `bench/verify.sh <model.gguf>` — quantized kernels vs the FP32 reference on the real model, and token ids vs llama.cpp's tokenizer
-- `build/kernel_bench` — time and bandwidth of one matrix-vector product per weight type
-- `build/llm_bench <model.gguf> --reference` — the old FP32 path, for before/after comparisons
-
-ImGui and GLFW are already vendored; do not clone over their directories. Build the test target with `cmake --build build --target llm_tests --parallel`, then run `ctest --test-dir build --output-on-failure`. The tokenizer integration test requires a local GGUF checkpoint and reports a skip when absent. Other tests exercise math, sampling, and KV cache behavior; they do not prove reference-model equivalence.
-
-Benchmark sources, machine details, and raw measurements are in [bench/](bench/) and [the write-up](docs/benchmark-writeup.md). Always distinguish prompt processing, decode-only throughput, and UI end-to-end throughput. The older screenshot/profile values and scalar estimates are not interchangeable with decode-only results. No benchmark number is a cross-machine guarantee.
+- **Models** — Meta AI (Llama 3.2)
