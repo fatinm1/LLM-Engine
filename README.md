@@ -52,9 +52,9 @@ The GGUF container, the Q4_K / Q6_K / Q8_0 block layouts, and the idea of quanti
 
 ## Demo
 
-https://github.com/user-attachments/assets/f90024b7-6b12-49b7-998a-685a7004ccea
+https://github.com/user-attachments/assets/ec7305f8-c943-4d77-a3be-2e6035fe17e0
 
-60 seconds: the desktop interface, loading a GGUF model, and generation controls.
+60 seconds, narrated: live generation in real time on a MacBook Air CPU, what is hand-written, and how it compares with llama.cpp on the same machine.
 
 ![LLM Engine desktop chat window](docs/screenshots/desktop-chat.png)
 
